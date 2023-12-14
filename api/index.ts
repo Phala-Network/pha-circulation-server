@@ -38,24 +38,15 @@ app.get('/all', async (c) => {
   const phalaCrowdloan = await kv.get('phalaCrowdloan')
   const circulation = await kv.get('circulation')
   const lastUpdate = await kv.get('lastUpdate')
-  if (
-    typeof ethMiningRewards === 'string' &&
-    typeof khalaMiningRewards === 'string' &&
-    typeof phalaMiningRewards === 'string' &&
-    typeof phalaCrowdloan === 'string' &&
-    typeof lastUpdate === 'number'
-  ) {
-    return c.json({
-      ethMiningRewards,
-      khalaMiningRewards,
-      phalaMiningRewards,
-      phalaCrowdloan,
-      circulation,
-      lastUpdate,
-    })
-  } else {
-    throw new Error('Not found')
-  }
+
+  return c.json({
+    ethMiningRewards,
+    khalaMiningRewards,
+    phalaMiningRewards,
+    phalaCrowdloan,
+    circulation,
+    lastUpdate,
+  })
 })
 
 app.get('/update', async (c) => {
