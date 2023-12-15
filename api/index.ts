@@ -32,12 +32,21 @@ app.get('/circulation', async (c) => {
 })
 
 app.get('/all', async (c) => {
-  const ethMiningRewards = await kv.get('ethMiningRewards')
-  const khalaMiningRewards = await kv.get('khalaMiningRewards')
-  const phalaMiningRewards = await kv.get('phalaMiningRewards')
-  const phalaCrowdloan = await kv.get('phalaCrowdloan')
-  const circulation = await kv.get('circulation')
-  const lastUpdate = await kv.get('lastUpdate')
+  const [
+    ethMiningRewards,
+    khalaMiningRewards,
+    phalaMiningRewards,
+    phalaCrowdloan,
+    circulation,
+    lastUpdate,
+  ] = await kv.mget([
+    'ethMiningRewards',
+    'khalaMiningRewards',
+    'phalaMiningRewards',
+    'phalaCrowdloan',
+    'circulation',
+    'lastUpdate',
+  ])
 
   return c.json({
     ethMiningRewards,
@@ -104,12 +113,6 @@ app.get('/update', async (c) => {
 
   const lastUpdate = Date.now()
 
-  await kv.set('ethMiningRewards', ethMiningRewards)
-  await kv.set('khalaMiningRewards', khalaMiningRewards)
-  await kv.set('phalaMiningRewards', phalaMiningRewards)
-  await kv.set('phalaCrowdloan', phalaCrowdloan)
-  await kv.set('lastUpdate', lastUpdate)
-
   const circulation = new Decimal(1e9)
     .minus(ethMiningRewards)
     .minus(khalaMiningRewards)
@@ -117,16 +120,18 @@ app.get('/update', async (c) => {
     .minus(phalaCrowdloan)
     .toString()
 
-  await kv.set('circulation', circulation)
-
-  return c.json({
-    ethMiningRewards: ethMiningRewards.toString(),
-    khalaMiningRewards: khalaMiningRewards.toString(),
-    phalaMiningRewards: phalaMiningRewards.toString(),
-    phalaCrowdloan: phalaCrowdloan.toString(),
+  const json = {
+    ethMiningRewards,
+    khalaMiningRewards,
+    phalaMiningRewards,
+    phalaCrowdloan,
     circulation,
     lastUpdate,
-  })
+  }
+
+  await kv.mset(json)
+
+  return c.json(json)
 })
 
 export default handle(app)
