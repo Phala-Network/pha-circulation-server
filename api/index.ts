@@ -70,7 +70,7 @@ app.get('/all', async (c) => {
     'lastUpdate',
   ])
 
-  return c.json({
+  const json = {
     ethereumTotalSupply,
     ethereumMiningRewards,
     ethereumPhalaChainbridge,
@@ -95,7 +95,17 @@ app.get('/all', async (c) => {
     totalCirculation,
 
     lastUpdate,
-  })
+  }
+
+  for (let k in json) {
+    if (k === 'lastUpdate') continue
+    const key = k as keyof typeof json
+    if (typeof json[key] === 'number') {
+      json[key] = String(json[key])
+    }
+  }
+
+  return c.json(json)
 })
 
 export default handle(app)
