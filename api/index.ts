@@ -1,4 +1,5 @@
 import {Hono} from 'hono'
+import {cors} from 'hono/cors'
 import {handle} from 'hono/vercel'
 import {kv} from '@vercel/kv'
 
@@ -6,7 +7,7 @@ export const config = {
   runtime: 'edge',
 }
 
-const app = new Hono().basePath('/api')
+const app = new Hono().basePath('/api').use('*', cors())
 
 app.get('/circulation', async (c) => {
   const value = await kv.get('totalCirculation')
