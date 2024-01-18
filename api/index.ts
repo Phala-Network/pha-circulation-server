@@ -10,7 +10,7 @@ export const config = {
 const app = new Hono().basePath('/api').use('*', cors())
 
 app.get('*', async (c, next) => {
-  c.res.headers.set('Cache-Control', 's-maxage=60')
+  c.res.headers.set('Cache-Control', 'public, max-age=60')
   await next()
 })
 
