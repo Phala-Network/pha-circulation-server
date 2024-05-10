@@ -9,7 +9,7 @@ export const config = {
   runtime: 'edge',
 }
 
-const base = 'https://subsquid.phala.network'
+const baseUrl = 'https://subsquid.phala.network'
 
 const circulationDocument = `
   {
@@ -40,32 +40,44 @@ const ethereumDocument = `
       khalaChainBridge
       reward
       sygmaBridge
+      portalBridge
       timestamp
       totalSupply
     }
   }
 `
 
+const baseDocument = `
+  {
+    circulationById(id: "0") {
+      circulation
+      totalSupply
+      timestamp
+    }
+  }
+`
+
 interface Circulation {
   circulation: string
+  timestamp: string
 }
 
-interface PhalaCirculation {
-  circulation: string
+interface PhalaCirculation extends Circulation {
   crowdloan: string
   reward: string
   sygmaBridge: string
-  timestamp: string
   totalIssuance: string
 }
 
-interface EthereumCirculation {
-  circulation: string
+interface EthereumCirculation extends Circulation {
   phalaChainBridge: string
   khalaChainBridge: string
   reward: string
   sygmaBridge: string
-  timestamp: string
+  totalSupply: string
+}
+
+interface BaseCirculation extends Circulation {
   totalSupply: string
 }
 
@@ -77,7 +89,7 @@ interface Res<T> {
 
 abstract class GraphQLClient {
   constructor(readonly url: string) {
-    this.url = new URL(url, base).toString()
+    this.url = new URL(url, baseUrl).toString()
   }
   request<T>(document: string) {
     return fetch(this.url, {
@@ -111,9 +123,19 @@ class EthereumGraphQLClient extends GraphQLClient {
   }
 }
 
+class BaseGraphQLClient extends GraphQLClient {
+  constructor() {
+    super('/base-pha-circulation/graphql')
+  }
+  requestAll() {
+    return this.request<BaseCirculation>(baseDocument)
+  }
+}
+
 const phala = new PhalaGraphQLClient('phala')
 const khala = new PhalaGraphQLClient('khala')
 const ethereum = new EthereumGraphQLClient()
+const base = new BaseGraphQLClient()
 
 const app = new Hono().basePath('/api').use('*', cors())
 
@@ -121,10 +143,12 @@ const calculateTotalCirculation = (
   phalaData: Circulation,
   khalaData: Circulation,
   ethereumData: Circulation,
+  baseData: Circulation,
 ) =>
   new Decimal(phalaData.circulation)
     .plus(khalaData.circulation)
     .plus(ethereumData.circulation)
+    .plus(baseData.circulation)
     .toDP(12, Decimal.ROUND_DOWN)
     .toString()
 
@@ -137,21 +161,27 @@ app.get('/circulation', async (c) => {
   const phalaData = await phala.requestCirculation()
   const khalaData = await khala.requestCirculation()
   const ethereumData = await ethereum.requestCirculation()
-  return c.text(calculateTotalCirculation(phalaData, khalaData, ethereumData))
+  const baseData = await base.requestCirculation()
+  return c.text(
+    calculateTotalCirculation(phalaData, khalaData, ethereumData, baseData),
+  )
 })
 
 app.get('/all', async (c) => {
   const phalaData = await phala.requestAll()
   const khalaData = await khala.requestAll()
   const ethereumData = await ethereum.requestAll()
+  const baseData = await base.requestAll()
   return c.json({
     phala: phalaData,
     khala: khalaData,
     ethereum: ethereumData,
+    base: baseData,
     totalCirculation: calculateTotalCirculation(
       phalaData,
       khalaData,
       ethereumData,
+      baseData,
     ),
   })
 })
