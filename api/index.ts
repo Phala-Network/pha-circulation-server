@@ -43,6 +43,7 @@ const ethereumDocument = `
       portalBridge
       timestamp
       totalSupply
+      vaultReward
     }
   }
 `
@@ -75,6 +76,7 @@ interface EthereumCirculation extends Circulation {
   reward: string
   sygmaBridge: string
   totalSupply: string
+  vaultReward: string
 }
 
 interface BaseCirculation extends Circulation {
@@ -106,8 +108,8 @@ abstract class GraphQLClient {
 }
 
 class PhalaGraphQLClient extends GraphQLClient {
-  constructor(readonly chain: 'phala' | 'khala') {
-    super(`/${chain}-circulation/graphql`)
+  constructor() {
+    super('/phala-circulation/graphql')
   }
   requestAll() {
     return this.request<PhalaCirculation>(phalaDocument)
@@ -132,8 +134,7 @@ class BaseGraphQLClient extends GraphQLClient {
   }
 }
 
-const phala = new PhalaGraphQLClient('phala')
-const khala = new PhalaGraphQLClient('khala')
+const phala = new PhalaGraphQLClient()
 const ethereum = new EthereumGraphQLClient()
 const base = new BaseGraphQLClient()
 
@@ -141,12 +142,10 @@ const app = new Hono().basePath('/api').use('*', cors())
 
 const calculateTotalCirculation = (
   phalaData: Circulation,
-  khalaData: Circulation,
   ethereumData: Circulation,
   baseData: Circulation,
 ) =>
   new Decimal(phalaData.circulation)
-    .plus(khalaData.circulation)
     .plus(ethereumData.circulation)
     .plus(baseData.circulation)
     .toDP(12, Decimal.ROUND_DOWN)
@@ -161,12 +160,9 @@ app.get('/circulation', async (c) => {
   return c.text('774094434.177857330145')
 
   const phalaData = await phala.requestCirculation()
-  const khalaData = await khala.requestCirculation()
   const ethereumData = await ethereum.requestCirculation()
   const baseData = await base.requestCirculation()
-  return c.text(
-    calculateTotalCirculation(phalaData, khalaData, ethereumData, baseData),
-  )
+  return c.text(calculateTotalCirculation(phalaData, ethereumData, baseData))
 })
 
 app.get('/all', async (c) => {
@@ -176,8 +172,16 @@ app.get('/all', async (c) => {
     ),
   )
 
+  const khalaData = {
+    circulation: '0',
+    crowdloan: '0',
+    reward: '0',
+    sygmaBridge: '0',
+    timestamp: new Date().toISOString(),
+    totalIssuance: '0',
+  }
+
   const phalaData = await phala.requestAll()
-  const khalaData = await khala.requestAll()
   const ethereumData = await ethereum.requestAll()
   const baseData = await base.requestAll()
   return c.json({
@@ -187,7 +191,6 @@ app.get('/all', async (c) => {
     base: baseData,
     totalCirculation: calculateTotalCirculation(
       phalaData,
-      khalaData,
       ethereumData,
       baseData,
     ),
