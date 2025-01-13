@@ -157,8 +157,6 @@ app.get('*', async (c, next) => {
 })
 
 app.get('/circulation', async (c) => {
-  return c.text('774094434.177857330145')
-
   const phalaData = await phala.requestCirculation()
   const ethereumData = await ethereum.requestCirculation()
   const baseData = await base.requestCirculation()
@@ -166,12 +164,6 @@ app.get('/circulation', async (c) => {
 })
 
 app.get('/all', async (c) => {
-  return c.json(
-    JSON.parse(
-      '{"phala":{"circulation":"111933724.922660242619","crowdloan":"0.913958485001","reward":"215521211.366000612251","sygmaBridge":"522545053.759037374167","timestamp":"2025-01-10T21:16:54.000000Z","totalIssuance":"849999990.961656714038"},"khala":{"circulation":"161985030.450998895558","crowdloan":"0","reward":"15298448.984889784818","sygmaBridge":"822712410.021539017189","timestamp":"2025-01-10T20:00:06.000000Z","totalIssuance":"999995889.457427697565"},"ethereum":{"circulation":"499415566.624331871968874667","phalaChainBridge":"0","khalaChainBridge":"0","reward":"0","sygmaBridge":"499774321.195801808031125333","portalBridge":"810112.17986632","timestamp":"2025-01-10T21:16:59.000000Z","totalSupply":"1000000000"},"base":{"circulation":"760112.17986632","totalSupply":"760112.17986632","timestamp":"2025-01-10T21:17:11.000000Z"},"totalCirculation":"774094434.177857330145"}',
-    ),
-  )
-
   const khalaData = {
     circulation: '0',
     crowdloan: '0',
