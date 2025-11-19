@@ -19,19 +19,6 @@ const circulationDocument = `
   }
 `
 
-const phalaDocument = `
-  {
-    circulationById(id: "0") {
-      circulation
-      crowdloan
-      reward
-      sygmaBridge
-      timestamp
-      totalIssuance
-    }
-  }
-`
-
 const ethereumDocument = `
   {
     circulationById(id: "0") {
@@ -61,13 +48,6 @@ const baseDocument = `
 interface Circulation {
   circulation: string
   timestamp: string
-}
-
-interface PhalaCirculation extends Circulation {
-  crowdloan: string
-  reward: string
-  sygmaBridge: string
-  totalIssuance: string
 }
 
 interface EthereumCirculation extends Circulation {
@@ -107,15 +87,6 @@ abstract class GraphQLClient {
   }
 }
 
-class PhalaGraphQLClient extends GraphQLClient {
-  constructor() {
-    super('/phala-circulation/graphql')
-  }
-  requestAll() {
-    return this.request<PhalaCirculation>(phalaDocument)
-  }
-}
-
 class EthereumGraphQLClient extends GraphQLClient {
   constructor() {
     super('/ethereum-pha-circulation/graphql')
@@ -134,36 +105,21 @@ class BaseGraphQLClient extends GraphQLClient {
   }
 }
 
-const phala = new PhalaGraphQLClient()
 const ethereum = new EthereumGraphQLClient()
 const base = new BaseGraphQLClient()
 
 const app = new Hono().basePath('/api').use('*', cors())
 
 const calculateTotalCirculation = (
-  phalaData: Circulation,
   ethereumData: Circulation,
   baseData: Circulation,
 ) =>
-  new Decimal(phalaData.circulation)
-    .plus(ethereumData.circulation)
+  new Decimal(ethereumData.circulation)
     .plus(baseData.circulation)
     .toDP(12, Decimal.ROUND_DOWN)
     .toString()
 
-app.get('*', async (c, next) => {
-  c.res.headers.set('Cache-Control', 'public, max-age=60')
-  await next()
-})
-
-app.get('/circulation', async (c) => {
-  const phalaData = await phala.requestCirculation()
-  const ethereumData = await ethereum.requestCirculation()
-  const baseData = await base.requestCirculation()
-  return c.text(calculateTotalCirculation(phalaData, ethereumData, baseData))
-})
-
-app.get('/all', async (c) => {
+const getAllData = async () => {
   const khalaData = {
     circulation: '0',
     crowdloan: '0',
@@ -173,20 +129,53 @@ app.get('/all', async (c) => {
     totalIssuance: '0',
   }
 
-  const phalaData = await phala.requestAll()
+  const phalaData = {
+    circulation: '0',
+    crowdloan: '0',
+    reward: '0',
+    sygmaBridge: '0',
+    timestamp: new Date().toISOString(),
+    totalIssuance: '0',
+  }
+
+  const phalaCirculation = '145357088.293045867646'
+  const phalaReward = '191763908.252539075609'
+
   const ethereumData = await ethereum.requestAll()
   const baseData = await base.requestAll()
-  return c.json({
+
+  ethereumData.circulation = new Decimal(ethereumData.circulation)
+    .plus(phalaCirculation)
+    .toString()
+  ethereumData.reward = new Decimal(ethereumData.reward)
+    .plus(phalaReward)
+    .toString()
+
+  return {
     phala: phalaData,
     khala: khalaData,
     ethereum: ethereumData,
     base: baseData,
-    totalCirculation: calculateTotalCirculation(
-      phalaData,
-      ethereumData,
-      baseData,
-    ),
-  })
+    totalCirculation: calculateTotalCirculation(ethereumData, baseData),
+  }
+}
+
+app.get('*', async (c, next) => {
+  c.res.headers.set(
+    'Cache-Control',
+    'public, max-age=60, stale-while-revalidate=60',
+  )
+  await next()
+})
+
+app.get('/circulation', async (c) => {
+  const data = await getAllData()
+  return c.text(data.totalCirculation)
+})
+
+app.get('/all', async (c) => {
+  const data = await getAllData()
+  return c.json(data)
 })
 
 export default handle(app)
