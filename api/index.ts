@@ -119,21 +119,7 @@ const calculateTotalCirculation = (
     .toDP(12, Decimal.ROUND_DOWN)
     .toString()
 
-app.get('*', async (c, next) => {
-  c.res.headers.set(
-    'Cache-Control',
-    'public, max-age=60, stale-while-revalidate=60',
-  )
-  await next()
-})
-
-app.get('/circulation', async (c) => {
-  const ethereumData = await ethereum.requestCirculation()
-  const baseData = await base.requestCirculation()
-  return c.text(calculateTotalCirculation(ethereumData, baseData))
-})
-
-app.get('/all', async (c) => {
+const getAllData = async () => {
   const khalaData = {
     circulation: '0',
     crowdloan: '0',
@@ -164,13 +150,32 @@ app.get('/all', async (c) => {
   ethereumData.reward = new Decimal(ethereumData.reward)
     .plus(phalaReward)
     .toString()
-  return c.json({
+
+  return {
     phala: phalaData,
     khala: khalaData,
     ethereum: ethereumData,
     base: baseData,
     totalCirculation: calculateTotalCirculation(ethereumData, baseData),
-  })
+  }
+}
+
+app.get('*', async (c, next) => {
+  c.res.headers.set(
+    'Cache-Control',
+    'public, max-age=60, stale-while-revalidate=60',
+  )
+  await next()
+})
+
+app.get('/circulation', async (c) => {
+  const data = await getAllData()
+  return c.text(data.totalCirculation)
+})
+
+app.get('/all', async (c) => {
+  const data = await getAllData()
+  return c.json(data)
 })
 
 export default handle(app)
