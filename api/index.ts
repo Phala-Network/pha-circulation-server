@@ -152,17 +152,24 @@ app.get('/all', async (c) => {
     totalIssuance: '0',
   }
 
+  const phalaCirculation = '145357088.293045867646'
+  const phalaReward = '191763908.252539075609'
+
   const ethereumData = await ethereum.requestAll()
   const baseData = await base.requestAll()
+
+  ethereumData.circulation = new Decimal(ethereumData.circulation)
+    .plus(phalaCirculation)
+    .toString()
+  ethereumData.reward = new Decimal(ethereumData.reward)
+    .plus(phalaReward)
+    .toString()
   return c.json({
     phala: phalaData,
     khala: khalaData,
     ethereum: ethereumData,
     base: baseData,
-    totalCirculation: calculateTotalCirculation(
-      ethereumData,
-      baseData,
-    ),
+    totalCirculation: calculateTotalCirculation(ethereumData, baseData),
   })
 })
 
