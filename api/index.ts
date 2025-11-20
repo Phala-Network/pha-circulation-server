@@ -138,18 +138,8 @@ const getAllData = async () => {
     totalIssuance: '0',
   }
 
-  const phalaCirculation = '145357088.293045867646'
-  const phalaReward = '191763908.252539075609'
-
   const ethereumData = await ethereum.requestAll()
   const baseData = await base.requestAll()
-
-  ethereumData.circulation = new Decimal(ethereumData.circulation)
-    .plus(phalaCirculation)
-    .toString()
-  ethereumData.reward = new Decimal(ethereumData.reward)
-    .plus(phalaReward)
-    .toString()
 
   return {
     phala: phalaData,
