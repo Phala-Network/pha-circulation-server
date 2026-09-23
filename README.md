@@ -32,6 +32,12 @@ Upstream load does not grow with traffic:
 Failures are never cached, and snapshot dates outside the supported range are
 rejected before any upstream call.
 
+RPC goes through the Goldsky Edge endpoint `pha-circulation-api`, whose free
+allowance is 1,000,000 requests per month. With the cache, `/api/all` costs at
+most about 6 requests per minute (about 270,000 per month) regardless of
+traffic, and a snapshot about 20. Check usage with
+`goldsky edge metrics pha-circulation-api`.
+
 ## Data sources
 
 - **Ethereum**: `vaultUnstakeLocked` comes from the
