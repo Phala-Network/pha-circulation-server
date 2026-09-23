@@ -58,6 +58,11 @@ export const parseSnapshotDate = (value: string, now = new Date()): bigint => {
 
 // The block the legacy squids snapshotted for a UTC day: the first block at or
 // after midnight, or the token deployment block on the deployment day.
+//
+// Block times are nearly constant (12s on Ethereum, 2s on Base), so an
+// interpolation search usually needs a handful of RPC calls. A step that does
+// not halve the range is followed by a bisection step, bounding the worst case
+// to about twice a binary search.
 export const findSnapshotBlock = async (
   getBlock: (blockNumber: bigint) => Promise<BlockRef>,
   target: bigint,
@@ -71,10 +76,24 @@ export const findSnapshotBlock = async (
   if (low.timestamp >= target) return low
   // Invariant: low.timestamp < target <= high.timestamp.
   let high = finalized
+  let bisect = false
   while (high.number - low.number > 1n) {
-    const mid = await getBlock((low.number + high.number) / 2n)
+    const span = high.number - low.number
+    const guess = bisect
+      ? low.number + span / 2n
+      : low.number +
+        (span * (target - low.timestamp)) / (high.timestamp - low.timestamp)
+    // Keep the probe strictly inside the range so every step makes progress.
+    const probe =
+      guess <= low.number
+        ? low.number + 1n
+        : guess >= high.number
+          ? high.number - 1n
+          : guess
+    const mid = await getBlock(probe)
     if (mid.timestamp >= target) high = mid
     else low = mid
+    bisect = !bisect && (high.number - low.number) * 2n > span
   }
   return high
 }

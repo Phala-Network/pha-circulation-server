@@ -60,3 +60,67 @@ describe('findSnapshotBlock', () => {
     )
   })
 })
+
+describe('findSnapshotBlock efficiency', () => {
+  // Reference: first block with timestamp >= target, by plain binary search.
+  const reference = (
+    timestampOf: (n: bigint) => bigint,
+    target: bigint,
+    last: bigint,
+  ) => {
+    let low = 0n
+    let high = last
+    while (low < high) {
+      const mid = (low + high) / 2n
+      if (timestampOf(mid) >= target) high = mid
+      else low = mid + 1n
+    }
+    return low
+  }
+
+  const run = async (
+    timestampOf: (n: bigint) => bigint,
+    target: bigint,
+    last: bigint,
+  ) => {
+    let calls = 0
+    const getBlock = async (number: bigint) => {
+      calls++
+      return {
+        number,
+        hash: `0x${'00'.repeat(32)}` as const,
+        timestamp: timestampOf(number),
+      }
+    }
+    const found = await findSnapshotBlock(
+      getBlock,
+      target,
+      0n,
+      await getBlock(last),
+    )
+    return {found: found.number, calls}
+  }
+
+  test('needs few calls on a 12s chain with missed slots', async () => {
+    // Roughly 1% of slots are missed, deterministically spread.
+    const timestampOf = (n: bigint) =>
+      1_600_000_000n + 12n * n + 12n * ((n * 7919n) / 100_003n)
+    const last = 16_000_000n
+    for (const offset of [1n, 777_777n, 8_000_000n, 15_999_000n]) {
+      const target = timestampOf(offset) - 5n
+      const {found, calls} = await run(timestampOf, target, last)
+      expect(found).toBe(reference(timestampOf, target, last))
+      expect(calls).toBeLessThanOrEqual(12)
+    }
+  })
+
+  test('stays bounded when interpolation is misleading', async () => {
+    // A huge timestamp jump in the middle defeats interpolation.
+    const timestampOf = (n: bigint) => (n < 8_000_000n ? n : 10n ** 12n + n)
+    const last = 16_000_000n
+    const target = 5_000_000n
+    const {found, calls} = await run(timestampOf, target, last)
+    expect(found).toBe(reference(timestampOf, target, last))
+    expect(calls).toBeLessThanOrEqual(2 * 24 + 2)
+  })
+})
