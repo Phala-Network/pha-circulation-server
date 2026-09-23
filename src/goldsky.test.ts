@@ -1,5 +1,5 @@
 import {afterAll, afterEach, describe, expect, spyOn, test} from 'bun:test'
-import {fetchIndexedVaultState} from './goldsky'
+import {fetchIndexedVaultState} from './goldsky.js'
 
 const config = {url: 'https://goldsky.test/gn', timeoutMs: 1000}
 const hash = `0x${'ab'.repeat(32)}` as const

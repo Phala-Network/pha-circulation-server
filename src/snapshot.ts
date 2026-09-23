@@ -1,11 +1,11 @@
-import {formatTotalCirculation} from './calc'
+import {formatTotalCirculation} from './calc.js'
 import {
   BASE_PHA_DEPLOYED_AT,
   type BlockRef,
   ETHEREUM_PHA_DEPLOYED_AT,
   VAULT_DEPLOYED_AT,
   getBlockRef,
-} from './chain'
+} from './chain.js'
 import {
   createClients,
   formatBase,
@@ -14,9 +14,9 @@ import {
   goldskyConfig,
   readBase,
   readEthereum,
-} from './circulation'
-import type {Config} from './config'
-import {fetchVaultUnstakeLockedAt} from './goldsky'
+} from './circulation.js'
+import type {Config} from './config.js'
+import {fetchVaultUnstakeLockedAt} from './goldsky.js'
 
 // First snapshot dates of the legacy squids: the days the tokens were deployed.
 export const FIRST_ETHEREUM_SNAPSHOT_DATE = '2020-04-30'

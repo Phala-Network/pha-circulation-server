@@ -7,7 +7,7 @@ import {
   erc20Abi,
   parseAbi,
 } from 'viem'
-import type {BaseInputs, EthereumInputs} from './calc'
+import type {BaseInputs, EthereumInputs} from './calc.js'
 
 export const ETHEREUM_PHA: Address =
   '0x6c5bA91642F10282b576d91922Ae6448C9d52f4E'

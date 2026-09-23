@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test'
-import {cached} from './cache'
+import {cached} from './cache.js'
 
 test('shares one computation between concurrent and later calls', async () => {
   let calls = 0

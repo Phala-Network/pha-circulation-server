@@ -5,7 +5,7 @@ import {
   calculateEthereum,
   formatAmount,
   formatTotalCirculation,
-} from './calc'
+} from './calc.js'
 
 // On-chain inputs at Ethereum block 25390163, the last row written by the
 // legacy ethereum-pha-circulation squid.

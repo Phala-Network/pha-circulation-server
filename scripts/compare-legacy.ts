@@ -13,8 +13,8 @@
 import fs from 'node:fs'
 import {parseArgs} from 'node:util'
 import {parseUnits} from 'viem'
-import {readConfig} from '../src/config'
-import {getSnapshot, parseSnapshotDate} from '../src/snapshot'
+import {readConfig} from '../src/config.js'
+import {getSnapshot, parseSnapshotDate} from '../src/snapshot.js'
 
 type Row = Map<string, string>
 

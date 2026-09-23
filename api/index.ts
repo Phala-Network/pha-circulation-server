@@ -1,14 +1,14 @@
 import {Hono} from 'hono'
 import {cors} from 'hono/cors'
 import {BaseError} from 'viem'
-import {cached} from '../src/cache'
-import {getAllData} from '../src/circulation'
-import {readConfig} from '../src/config'
+import {cached} from '../src/cache.js'
+import {getAllData} from '../src/circulation.js'
+import {readConfig} from '../src/config.js'
 import {
   SnapshotDateError,
   getSnapshot,
   parseSnapshotDate,
-} from '../src/snapshot'
+} from '../src/snapshot.js'
 
 // Each layer bounds upstream load: the CDN caches per URL and region, and
 // `cached` computes each key at most once per TTL behind it.

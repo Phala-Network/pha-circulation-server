@@ -4,16 +4,16 @@ import {
   calculateEthereum,
   formatAmount,
   formatTotalCirculation,
-} from './calc'
+} from './calc.js'
 import {
   type BlockId,
   createClient,
   getBlockRef,
   readBaseInputs,
   readEthereumInputs,
-} from './chain'
-import type {Config} from './config'
-import {fetchIndexedVaultState} from './goldsky'
+} from './chain.js'
+import type {Config} from './config.js'
+import {fetchIndexedVaultState} from './goldsky.js'
 
 export class StaleDataError extends Error {
   override name = 'StaleDataError'

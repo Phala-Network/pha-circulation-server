@@ -3,7 +3,7 @@ import {
   SnapshotDateError,
   findSnapshotBlock,
   parseSnapshotDate,
-} from './snapshot'
+} from './snapshot.js'
 
 describe('parseSnapshotDate', () => {
   const now = new Date('2026-09-23T12:00:00Z')
