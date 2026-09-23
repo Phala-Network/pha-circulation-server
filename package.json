@@ -3,15 +3,19 @@
   "type": "module",
   "scripts": {
     "deploy": "vercel",
-    "start": "vercel dev"
+    "start": "vercel dev",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "decimal.js": "^10.4.3",
-    "hono": "^4.3.4"
+    "@vercel/functions": "^3.9.9",
+    "hono": "^4.3.4",
+    "viem": "^2.56.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.7.3",
     "@types/bun": "^1.1.1",
+    "typescript": "^5",
     "vercel": "^34.1.9"
   }
 }
