@@ -74,6 +74,11 @@ Set these in the Vercel project settings. Do not commit them.
 | `MAX_ETHEREUM_LAG_BLOCKS` | no | Maximum Goldsky lag behind the Ethereum head. Default `50` (about 10 minutes). |
 | `UPSTREAM_TIMEOUT_MS` | no | Timeout for each Goldsky and RPC request. Default `8000`. |
 
+## Operations
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the data flow, consumers,
+free-tier limits, runbooks, and the legacy squid retirement plan.
+
 ## Development
 
 ```bash
