@@ -73,16 +73,24 @@ the legacy squids, so this only helps until they are retired.
 ## Legacy squid retirement
 
 The `subsquid.phala.network` circulation squids (Ethereum, Base, Phala, Khala)
-are frozen and no longer used by any known consumer. Their data is archived in
-the Dune legacy tables and in the
+are archived in the Dune legacy tables and in the
 [`legacy-squid-archive-2026-09-23`](https://github.com/Phala-Network/pha-circulation-server/releases/tag/legacy-squid-archive-2026-09-23)
-release (dumps restore-tested). Retire them in steps:
+release (dumps restore-tested).
 
-1. Until about 2026-10-07: keep them running as the rollback path. Caddy
-   access logs for `subsquid.phala.network` are in
-   `/var/log/caddy/subsquid-access.log` on OVH.
-2. If the logs show no remaining callers of the four `*-circulation` routes:
-   remove the routes from `/etc/caddy/Caddyfile` (the log block can go too),
-   stop the eight containers without removing volumes, and delete the four
-   circulation data sources in Grafana.
-3. About two weeks later: remove the containers and volumes.
+**Stage 1, done 2026-09-24.** After the cutover, Caddy access logs showed no
+callers other than the previous API deployment. The four `*-circulation`
+routes now return `410 Gone`, and the eight containers are stopped with their
+volumes kept. To undo: restore `/etc/caddy/Caddyfile.bak-20260924-retire`,
+`sudo systemctl reload caddy`, and `docker start` the containers.
+
+**Stage 2, from about 2026-10-08.** If
+`/var/log/caddy/subsquid-access.log` shows no one hitting the `410` routes:
+
+1. `docker rm` the eight `*-circulation-*` containers and
+   `docker volume rm` `ethereum-pha-circulation-next_db`,
+   `base-pha-circulation_db`, `phala-circulation_db`, `khala-circulation_db`,
+   and the older `ethereum-pha-circulation_db`.
+2. Remove the temporary `log` block (and optionally the `410` block) from the
+   Caddyfile.
+3. Delete the four unused circulation data sources in Grafana (needs a Grafana
+   admin login).
