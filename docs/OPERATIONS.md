@@ -101,3 +101,15 @@ with its `grafana_grafana-storage` volume kept. To undo: restore
 `/etc/caddy/Caddyfile.bak-20260924-grafana`, `sudo systemctl reload caddy`, and
 `docker start grafana`. Once it is clearly not needed, remove the container and
 volume.
+
+## Sygma explorer indexer
+
+Its only consumers were the Grafana dashboards, and `/sygma-explorer` had no
+traffic, so it was retired on 2026-09-24 with Grafana: the route returns `410`,
+and the four `sygma-explorer-indexer-*` containers (API and a three-node
+MongoDB replica set) are stopped with their volumes kept. MongoDB was stopped
+with the default 10-second timeout and killed, so its journal recovery runs on
+the next start. To undo: restore `/etc/caddy/Caddyfile.bak-20260924-sygma`,
+`sudo systemctl reload caddy`, and `docker start` the MongoDB containers, then
+the API.
+
