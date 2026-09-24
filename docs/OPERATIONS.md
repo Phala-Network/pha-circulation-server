@@ -92,5 +92,12 @@ volumes kept. To undo: restore `/etc/caddy/Caddyfile.bak-20260924-retire`,
    and the older `ethereum-pha-circulation_db`.
 2. Remove the temporary `log` block (and optionally the `410` block) from the
    Caddyfile.
-3. Delete the four unused circulation data sources in Grafana (needs a Grafana
-   admin login).
+
+## Grafana
+
+Grafana (`analytics.phala.network`) was retired on 2026-09-24: every path now
+redirects (302) to the Dune dashboard, and the `grafana` container is stopped
+with its `grafana_grafana-storage` volume kept. To undo: restore
+`/etc/caddy/Caddyfile.bak-20260924-grafana`, `sudo systemctl reload caddy`, and
+`docker start grafana`. Once it is clearly not needed, remove the container and
+volume.
