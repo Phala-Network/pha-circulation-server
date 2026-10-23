@@ -18,7 +18,7 @@ Phala Cloud daily stats ──────────────────�
 
 The Worker runs in the Phala Cloudflare account from
 [`scripts-toolbox/workers/dune-sync`](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/dune-sync).
-Cron `5 * * * *` runs at five minutes past every hour (Pacific and UTC),
+Cron `5 * * * *` runs at five minutes past every hour,
 processing up to two dates per daily stream per run. Caught-up runs are no-ops.
 Workers KV holds the checkpoints in `sync-state` and `realtime-date`, rather
 than a local state file. See the
@@ -115,9 +115,9 @@ not depend on the OVH host.
 
 Archives are in the Dune legacy tables, the
 [`legacy-squid-archive-2026-09-23`](https://github.com/Phala-Network/pha-circulation-server/releases/tag/legacy-squid-archive-2026-09-23)
-release (circulation dumps restore-tested), and the private S3 bucket
-`phala-ovh-archive-481766170915` under
-`archive/computation-squids-20261023/` and `archive/ovh-retired-20261023/`.
+release (circulation dumps restore-tested), and a private S3 archive maintained
+by the Phala ops team (computation squid dumps and other retired OVH data,
+2026-10-23).
 
 ## Grafana
 
