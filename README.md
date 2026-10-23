@@ -77,7 +77,10 @@ Set these in the Vercel project settings. Do not commit them.
 ## Operations
 
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the data flow, consumers,
-free-tier limits, runbooks, and the legacy squid retirement plan.
+free-tier limits, runbooks, and the legacy squid archives. The Dune sync runs
+hourly as the Cloudflare Worker `phala-dune-sync` in
+[`scripts-toolbox`](https://github.com/Phala-Network/scripts-toolbox#dune-sync-worker).
+All `subsquid.phala.network` squids are retired.
 
 ## Development
 
@@ -98,6 +101,7 @@ ETHEREUM_RPC_URL=... BASE_RPC_URL=... GOLDSKY_VAULT_STATE_URL=... \
 
 ## Rollback
 
-Promote the previous production deployment in Vercel
-(`vercel rollback --scope phala`). This only helps while the legacy
-`subsquid.phala.network` circulation services are still running.
+Before promoting a previous production deployment in Vercel
+(`vercel rollback --scope phala`), verify that it uses Goldsky and RPC.
+Deployments that read `subsquid.phala.network` cannot serve as a rollback:
+the retired services return `410 Gone`.
