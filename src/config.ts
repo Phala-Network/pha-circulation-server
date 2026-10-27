@@ -1,9 +1,6 @@
 export interface Config {
-  goldskyUrl: string
-  goldskyToken?: string
-  ethereumRpcUrl: string
-  baseRpcUrl: string
-  maxEthereumLagBlocks: bigint
+  ethereumUrl: string
+  baseUrl: string
   timeoutMs: number
 }
 
@@ -26,14 +23,8 @@ export const readConfig = (env: Record<string, string | undefined>): Config => {
     return value
   }
   return {
-    goldskyUrl: required('GOLDSKY_VAULT_STATE_URL'),
-    goldskyToken: optional('GOLDSKY_API_TOKEN'),
-    ethereumRpcUrl: required('ETHEREUM_RPC_URL'),
-    baseRpcUrl: required('BASE_RPC_URL'),
-    // 50 blocks is about 10 minutes on Ethereum.
-    maxEthereumLagBlocks: BigInt(positiveInt('MAX_ETHEREUM_LAG_BLOCKS', 50)),
-    // Requests are not retried, so /api/all stays within two sequential
-    // rounds of this timeout.
+    ethereumUrl: required('GOLDSKY_ETHEREUM_URL'),
+    baseUrl: required('GOLDSKY_BASE_URL'),
     timeoutMs: positiveInt('UPSTREAM_TIMEOUT_MS', 8000),
   }
 }
