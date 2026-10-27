@@ -25,6 +25,10 @@ dashboard and JSON APIs. Archived Phala/Khala circulation stays frozen.
 Cloud observations include values that cannot be reconstructed later;
 weekly `cloud_daily` exports to R2 preserve those observations.
 
+The circulation API runs on Node.js 24.x, pinned by `engines.node` in
+`package.json`. Vercel uses that pin; CI reads the same value before running
+the Bun toolchain.
+
 Code and component-specific commands:
 
 - [Subgraphs](https://github.com/Phala-Network/phala-vault-state-subgraph):

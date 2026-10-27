@@ -104,7 +104,9 @@ variables in Vercel; use the subgraphs' `/prod/gn` tag endpoints in production.
 
 ## Development
 
-Use Bun **1.4.2**. Biome is pinned exactly; the text `bun.lock` is authoritative.
+Use Node.js **24.x** and Bun **1.4.2**. Vercel and CI read the Node runtime
+from `package.json` (`engines.node`). Biome is pinned exactly; the text
+`bun.lock` is authoritative.
 
 ```bash
 bun install --frozen-lockfile
