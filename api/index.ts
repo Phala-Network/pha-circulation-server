@@ -2,12 +2,13 @@ import {Hono} from 'hono'
 import {cors} from 'hono/cors'
 import {cached} from '../src/cache.js'
 import {getAllData} from '../src/circulation.js'
-import {readConfig} from '../src/config.js'
+import {ConfigError, readConfig} from '../src/config.js'
 import {
   getSnapshot,
   parseSnapshotDate,
   SnapshotDateError,
 } from '../src/snapshot.js'
+import {SubgraphError} from '../src/subgraph.js'
 
 // Each layer bounds upstream load: the CDN caches per URL and region, and
 // `cached` computes each key at most once per TTL behind it.
@@ -18,9 +19,14 @@ const LATEST_CACHE_CONTROL =
 const SNAPSHOT_TTL_SECONDS = 30 * 24 * 60 * 60
 const SNAPSHOT_CACHE_CONTROL = 'public, max-age=3600, s-maxage=86400'
 
-// Errors from fetch or persistence can include credentials. Log only the class.
-const describeError = (error: unknown) =>
-  error instanceof Error ? error.name : 'Unknown error'
+// Only controlled application errors have safe messages; provider and
+// persistence errors can include credentials, so log their class alone.
+const describeError = (error: unknown) => {
+  if (error instanceof SubgraphError || error instanceof ConfigError) {
+    return `${error.name}: ${error.message}`
+  }
+  return error instanceof Error ? error.name : 'Unknown error'
+}
 
 const loadLatest = async () => {
   try {

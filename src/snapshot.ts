@@ -1,6 +1,7 @@
 import {formatTotalCirculation} from './calc.js'
 import {formatBase, formatEthereum, formatTimestamp} from './circulation.js'
 import type {Config} from './config.js'
+import {utcMidnight} from './date.js'
 import {readSubgraph} from './subgraph.js'
 
 // First snapshot dates of the legacy squids: the days the tokens were deployed.
@@ -18,9 +19,6 @@ export class SnapshotDateError extends Error {
     super(message)
   }
 }
-
-const utcMidnight = (date: string) =>
-  BigInt(Date.parse(`${date}T00:00:00Z`) / 1000)
 
 // Accepts YYYY-MM-DD between the first Ethereum snapshot date and today (UTC)
 // and returns its UTC midnight as a unix timestamp. Checked before upstream I/O.

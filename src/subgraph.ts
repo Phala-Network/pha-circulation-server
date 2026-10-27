@@ -1,4 +1,5 @@
 import type {Config} from './config.js'
+import {utcMidnight} from './date.js'
 
 export type Chain = 'ethereum' | 'base'
 
@@ -148,11 +149,7 @@ export const readSubgraph = async (
   const rawState = date ? field(data, 'chainDay') : latest
   const state =
     rawState === null ? null : parseState(rawState, chain, indexedBlock)
-  if (
-    date &&
-    state &&
-    state.timestamp !== BigInt(Date.parse(`${date}T00:00:00Z`) / 1000)
-  ) {
+  if (date && state && state.timestamp !== utcMidnight(date)) {
     throw new SubgraphError('Subgraph snapshot date differs')
   }
   return {state, indexedAt, lagSeconds: age > 0n ? age : 0n}
