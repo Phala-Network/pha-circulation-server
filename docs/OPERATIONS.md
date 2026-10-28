@@ -10,7 +10,7 @@ Ethereum ──> Goldsky phala-ethereum/prod ──> this API (Vercel)
 
 Goldsky ChainDay / VaultDay / ClaimDay ──┐
 Phala Cloud daily stats ────────────────┼─> phala-analytics Worker
-CoinGecko PHA price ───────────────────┘        │ SQLite cache
+DefiLlama PHA price ───────────────────┘        │ SQLite cache
                                               v
                                      analytics.phala.network
 
@@ -42,7 +42,7 @@ the Bun toolchain.
 
 Code and component-specific commands:
 
-- [Subgraphs](https://github.com/Phala-Network/phala-vault-state-subgraph):
+- [Subgraphs](https://github.com/Phala-Network/phala-subgraphs):
   manifests, mappings, ABI review, builds, deploy commands and parity verifier.
 - [Analytics Worker](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/phala-analytics):
   refresh, cache schema, archive seeding, exports, deployment and secrets.
@@ -56,19 +56,26 @@ Code and component-specific commands:
 | External supply trackers           | `https://pha-circulation-server.vercel.app/api/circulation`, a plain decimal with no newline or JSON wrapper. Individual tracker identities are not recorded. |
 | Analytics current circulation      | `/api/all`; the Phala/Khala objects are zero.                                                                                                                 |
 | Daily API consumers                | `/api/snapshot?date=YYYY-MM-DD`; values at exactly 00:00 UTC, last-observed block metadata.                                                                   |
-| `phala-analytics` Worker           | Direct `ChainDay`, `VaultDay`, `ClaimDay` reads; Phala Cloud daily stats and CoinGecko price.                                                                 |
+| `phala-analytics` Worker           | Direct `ChainDay`, `VaultDay`, `ClaimDay` reads; Phala Cloud daily stats and DefiLlama price (CoinGecko-sourced).                                             |
 | `analytics.phala.network`          | Dashboard and JSON APIs served by the analytics Worker.                                                                                                       |
 | apps claim page                    | `Claimed` (Khala) and `ClaimedAndBridged` (Phala) from `phala-ethereum/prod/gn`; eligibility and transactions use contracts directly.                         |
 | Snapshot space `phala-network.eth` | Separate Phala L2 voting-power API described below.                                                                                                           |
 
-## Goldsky free allowance
+## Goldsky deployments and limits
 
-Stay within the Scale free allowance: **2,250 worker-hours/month** and about
-**100,000 stored entities**, team-wide. The Ethereum subgraph is the only
-always-on indexer in this analytics stack; leave room for a temporary upgrade
-version. Goldsky enforces a hard cap of **three deployed subgraphs, including
-paused versions**. Pausing frees worker time, not a deploy
-slot or storage. Starter's one-time credit is not an ongoing free allowance.
+The only deployed subgraph is `phala-ethereum/1.1.0`, with `prod` pointing to
+that version. `phala-vault-state`, `khala-claimer` and `phala-claimer` have been
+deleted; the Ethereum subgraph now supplies their data.
+
+The project is on Starter; check remaining credits in the dashboard. Starter's
+one-time credit is not an ongoing free allowance. Scale's free allowance is
+**2,250 worker-hours/month** and about **100,000 stored entities**, team-wide.
+Goldsky enforces a hard cap of **three deployed subgraphs, including paused
+versions**. Leave room for a temporary upgrade version. Pausing frees worker
+time, not a deployment slot or storage.
+
+The Edge RPC endpoint `pha-circulation-api` is unused (0 requests since the API
+cutover), but Starter does not allow its deletion. No current consumer uses it.
 
 Count every deployed name/version before a deploy and check stored entities
 after sync. Deploy one replacement at a time and delete the superseded

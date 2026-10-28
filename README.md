@@ -1,7 +1,8 @@
 # pha-circulation-server
 
 PHA circulating supply API on Vercel (`phala/pha-circulation-server`, Node.js).
-Reads the `phala-ethereum` Goldsky subgraph; no RPC is used.
+Reads the [`phala-ethereum` Goldsky subgraph](https://github.com/Phala-Network/phala-subgraphs);
+no RPC is used.
 
 ## API contract
 
