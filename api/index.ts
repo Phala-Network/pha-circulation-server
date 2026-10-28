@@ -1,30 +1,31 @@
 import {Hono} from 'hono'
 import {cors} from 'hono/cors'
-import {BaseError} from 'viem'
 import {cached} from '../src/cache.js'
 import {getAllData} from '../src/circulation.js'
-import {readConfig} from '../src/config.js'
+import {ConfigError, readConfig} from '../src/config.js'
 import {
-  SnapshotDateError,
   getSnapshot,
   parseSnapshotDate,
+  SnapshotDateError,
 } from '../src/snapshot.js'
+import {SubgraphError} from '../src/subgraph.js'
 
 // Each layer bounds upstream load: the CDN caches per URL and region, and
 // `cached` computes each key at most once per TTL behind it.
 const LATEST_TTL_SECONDS = 60
 const LATEST_CACHE_CONTROL =
   'public, max-age=60, s-maxage=60, stale-while-revalidate=60'
-// Snapshots are read at finalized blocks and never change.
+// ChainDay snapshots are immutable within a subgraph deployment.
 const SNAPSHOT_TTL_SECONDS = 30 * 24 * 60 * 60
 const SNAPSHOT_CACHE_CONTROL = 'public, max-age=3600, s-maxage=86400'
 
-// Never log raw provider errors: viem error messages include the RPC URL,
-// which may embed an API key.
+// Only controlled application errors have safe messages; provider and
+// persistence errors can include credentials, so log their class alone.
 const describeError = (error: unknown) => {
-  if (error instanceof BaseError) return `${error.name}: ${error.shortMessage}`
-  if (error instanceof Error) return `${error.name}: ${error.message}`
-  return 'Unknown error'
+  if (error instanceof SubgraphError || error instanceof ConfigError) {
+    return `${error.name}: ${error.message}`
+  }
+  return error instanceof Error ? error.name : 'Unknown error'
 }
 
 const loadLatest = async () => {
@@ -60,8 +61,7 @@ app.get('/all', async (c) => {
   return c.json(data)
 })
 
-// Daily snapshot at the first finalized block of a UTC date, matching the
-// legacy squid Snapshot rows. Used by the Dune sync for daily rows and gaps.
+// Daily snapshot evaluated at exactly 00:00 UTC by the subgraph.
 app.get('/snapshot', async (c) => {
   try {
     const date = c.req.query('date') ?? ''

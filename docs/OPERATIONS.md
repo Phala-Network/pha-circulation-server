@@ -3,130 +3,156 @@
 ## Data flow
 
 ```text
-Ethereum Vault events ──> Goldsky subgraph phala-vault-state (prod tag)
-                                  │ vaultUnstakeLocked + indexed block
-Goldsky Edge RPC (pha-circulation-api) ──> this API (Vercel, hnd1)
-   Ethereum at the indexed block,                ├─> /api/circulation ──> supply trackers
-   Base at the finalized block                  └─> /api/all, /api/snapshot ──┐
-Phala Cloud daily stats ─────────────────────────────────────────────────────┤
-                                                                            v
-                                    phala-dune-sync (Cloudflare Worker; hourly)
-                                                │ Workers KV checkpoints
-                                                v
-                     Dune dune.phala_network.* ──> dune.com/phala_network/phala-analytics
+Ethereum ──> Goldsky phala-ethereum/prod ──> this API (Vercel)
+                                               ├─> /api/circulation ─> supply trackers
+                                               ├─> /api/all ─> current analytics
+                                               └─> /api/snapshot ─> daily API consumers
+
+Goldsky ChainDay / VaultDay / ClaimDay ──┐
+Phala Cloud daily stats ────────────────┼─> phala-analytics Worker
+CoinGecko PHA price ───────────────────┘        │ SQLite cache
+                                              v
+                                     analytics.phala.network
+
+apps claim page ──> phala-ethereum/prod (Khala and Phala claim logs)
 ```
 
-The Worker runs in the Phala Cloudflare account from
-[`scripts-toolbox/workers/dune-sync`](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/dune-sync).
-Cron `5 * * * *` runs at five minutes past every hour,
-processing up to two dates per daily stream per run. Caught-up runs are no-ops.
-Workers KV holds the checkpoints in `sync-state` and `realtime-date`, rather
-than a local state file. See the
-[`scripts-toolbox` README](https://github.com/Phala-Network/scripts-toolbox#manual-run)
-for manual runs.
+The Ethereum subgraph owns chain-derived state, midnight snapshots, Vault
+accrual and claim events. The circulation API formats its integer wei amounts
+as decimal PHA strings; it does not call RPC or reconstruct historical blocks. The
+`phala-analytics` Cloudflare Worker refreshes a SQLite cache and serves the
+dashboard and JSON APIs. Archived Phala/Khala circulation stays frozen.
+Cloud observations include values that cannot be reconstructed later;
+weekly `cloud_daily` exports to R2 preserve those observations.
+
+Circulation includes the Portal escrow backing bridged PHA on Base as
+circulating on Ethereum. The `portalBridge` component remains available, but
+the subgraph no longer subtracts it. `/api/circulation` and `totalCirculation`
+use Ethereum `circulation` alone, with the existing 12-decimal plain-number
+format. Relative to the former Ethereum-plus-Base total, this adds Portal
+escrow minus bridged supply (approximately 50,000 PHA when the definition
+changed). Historical snapshots use the same definition. Both JSON endpoints
+retain `base: null`; `/api/all` retains `sources.base: null`. There is no
+separate bridged-chain indexer or API request. Verify the subgraph uses this
+formula before deploying the API.
+
+The circulation API runs on Node.js 24.x, pinned by `engines.node` in
+`package.json`. Vercel uses that pin; CI reads the same value before running
+the Bun toolchain.
+
+Code and component-specific commands:
+
+- [Subgraphs](https://github.com/Phala-Network/phala-vault-state-subgraph):
+  manifests, mappings, ABI review, builds, deploy commands and parity verifier.
+- [Analytics Worker](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/phala-analytics):
+  refresh, cache schema, archive seeding, exports, deployment and secrets.
+- [Circulation API contract](../README.md): endpoint shapes, date convention,
+  cache headers and environment variables.
 
 ## Consumers
 
-| Consumer | Uses |
-| --- | --- |
-| External price and supply trackers (about 180 requests/hour, unidentified) | `/api/circulation` |
-| Cloudflare Worker `phala-dune-sync` (`scripts-toolbox`) | `/api/all` (realtime table), `/api/snapshot` (daily rows), Phala Cloud daily stats |
-| Dune dashboard `phala_network/phala-analytics` | Dune tables below |
+| Consumer                           | Contract                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| External supply trackers           | `https://pha-circulation-server.vercel.app/api/circulation`, a plain decimal with no newline or JSON wrapper. Individual tracker identities are not recorded. |
+| Analytics current circulation      | `/api/all`; the Phala/Khala objects are zero.                                                                                                                 |
+| Daily API consumers                | `/api/snapshot?date=YYYY-MM-DD`; values at exactly 00:00 UTC, last-observed block metadata.                                                                   |
+| `phala-analytics` Worker           | Direct `ChainDay`, `VaultDay`, `ClaimDay` reads; Phala Cloud daily stats and CoinGecko price.                                                                 |
+| `analytics.phala.network`          | Dashboard and JSON APIs served by the analytics Worker.                                                                                                       |
+| apps claim page                    | `Claimed` (Khala) and `ClaimedAndBridged` (Phala) from `phala-ethereum/prod/gn`; eligibility and transactions use contracts directly.                         |
+| Snapshot space `phala-network.eth` | Separate Phala L2 voting-power API described below.                                                                                                           |
 
-## Dune tables (`dune.phala_network`)
+## Goldsky free allowance
 
-| Table | Written by |
-| --- | --- |
-| `dataset_phala_computation_snapshots` | Worker inserts daily rows, one per UTC date since 2020-04-30; up to two dates per hourly run |
-| `dataset_phala_computation` | Worker CSV overwrite once per UTC day (realtime values) |
-| `dataset_phala_cloud` | Worker inserts completed UTC days; up to two dates per hourly run |
-| `dataset_phala_legacy_{ethereum,base,phala,khala}_circulation_snapshots` | One-time archive of the retired squids; not updated |
+Stay within the Scale free allowance: **2,250 worker-hours/month** and about
+**100,000 stored entities**, team-wide. The Ethereum subgraph is the only
+always-on indexer in this analytics stack; leave room for a temporary upgrade
+version. Goldsky enforces a hard cap of **three deployed subgraphs, including
+paused versions**. Pausing frees worker time, not a deploy
+slot or storage. Starter's one-time credit is not an ongoing free allowance.
 
-The realtime Phala row uses frozen final computation values from the retired
-`phala-computation` squid (the Phala parachain ended; last snapshot
-2025-11-19). Circulation values still come from `/api/all`.
-
-**Status as of 2026-10-23.** The old OVH PM2 job silently stopped after
-2026-09-23. The daily tables have no rows beyond the cloud checkpoint
-2026-09-22 and snapshots checkpoint 2026-09-23. The Dune account's datapoint
-limit is exhausted (uploads return HTTP 402). Once the limit is raised or the
-billing cycle resets, the Worker backfills automatically.
-
-## Free-tier limits
-
-- **Goldsky subgraphs**: 2,250 worker hours per month fit exactly three
-  always-on subgraphs (`phala-vault-state`, `phala-claimer`, `khala-claimer`).
-  Never keep a fourth running beyond a version upgrade.
-- **Goldsky Edge RPC**: 1,000,000 requests per month; expected use is about
-  270,000. Starter plans cannot change the endpoint's 500 requests/minute
-  per-IP limit, which is why the Dune sync paces backfills.
-  Check with `goldsky edge metrics pha-circulation-api`.
-
-## Checking health
-
-There is no alerting. To check by hand:
-
-- `curl https://pha-circulation-server.vercel.app/api/all`: `ethereum.timestamp`
-  should be minutes old; `503` means an upstream is failing or lagging.
-- Goldsky emails project members when a subgraph stalls.
-- Check the Cloudflare dashboard's Worker logs and cron events for
-  `phala-dune-sync`. Each daily stream checkpoints successful inserts in KV
-  and retries from there on the next hourly run. A missing past snapshot date
-  fails the run; an unfinalized snapshot for today waits for the next run.
-  HTTP 402 from Dune means writes are blocked by the datapoint limit.
+Count every deployed name/version before a deploy and check stored entities
+after sync. Deploy one replacement at a time and delete the superseded
+version after verification. Paused subgraphs still serve stale data and can eventually be deleted by Goldsky;
+they are not durable archives. Export any irreplaceable comparison data before
+deleting a version. These limits also apply during rollback.
 
 ## Runbooks
 
-**Subgraph change.** Deploy `phala-vault-state/<new version>`, wait until it is
-synced without indexing errors, compare with
-`VAULT_UNSTAKE_LOCKED_SOURCE=goldsky bun scripts/compare-legacy.ts ...`, move
-the `prod` tag, and delete the old version.
+### Subgraph upgrade and tag
 
-**Missing Dune days.** Check Worker errors and Dune write capacity first.
-Once writes succeed, each hourly run inserts up to two dates per daily
-stream after its KV checkpoint. To check snapshots,
-`SELECT MAX(updated_time) FROM dune.phala_network.dataset_phala_computation_snapshots`.
-Compare it with `snapshots` in Workers KV `sync-state`; the Worker resumes
-from KV, not from the latest Dune row. See the `scripts-toolbox` README for
-manual runs and checkpoint reconciliation after an ambiguous insert failure.
+1. Review changes to contract ABIs, excluded balances, or accrual formulas.
+   For a Vault implementation upgrade, verify the implementation and its
+   getters, update the allowlist/formula dispatch, and rebuild. Do not simply
+   override `vaultImplementationReviewed`.
+2. Check deployment slots, worker-hours and entity budget. Build and deploy
+   one replacement version using the subgraph repository's commands. Full
+   historical mappings need a full sync; a short-range feature test cannot
+   validate historical balances.
+3. Wait for sync. Query `Latest(id: "current")` and `_meta`: no indexing
+   errors, `Latest.timestamp` within 15 minutes, reviewed Vault implementation.
+   Compare amounts, Vault checkpoints and complete claimer ID/field sets with
+   preserved independent references using the subgraph parity verifier.
+4. Move `phala-ethereum/prod` to the verified version. Both the API and apps
+   use tag URLs; the Worker tracks `_meta.deployment` and reloads chain-derived
+   cache rows after it changes.
+5. Promote a fresh circulation API deployment to change its runtime cache
+   namespace. Existing daily CDN responses can take up to one day to expire.
+   Verify plain-number output, `/api/all` totals and sampled daily values
+   against `ChainDay`, confirm both JSON endpoints have `base: null`, and
+   check the apps claim logs.
+6. Delete the superseded version after consumer verification. Keep total
+   deployed versions at or below three.
 
-**Rebuild the snapshots table.** In `scripts-toolbox`,
-`bun src/duneSnapshotsTable.ts export`, then `recreate <backup>` and
-`prepend-legacy <ethereum.snapshot.csv>`. Restore Dune write capacity first
-and do not overlap the rebuild with scheduled or manual syncs. Verify that
-the restored latest date matches `snapshots` in Workers KV `sync-state`;
-the Worker backfills subsequent dates from that checkpoint.
+Before deleting the old version, rollback can move `prod` back and promote a
+fresh API deployment. After deletion, recovery requires redeploying and
+resyncing that version; deleting an indexer is not an instant rollback.
 
-**API rollback.** Before `vercel rollback --scope phala`, verify that the
-target deployment uses Goldsky and RPC. Deployments that read the retired
-squids fail with `410 Gone`.
+### API returns 503
 
-## Legacy squid retirement
+Read the configured Ethereum subgraph's `Latest` and `_meta` directly. Confirm
+the URL uses the expected `prod` tag, indexing is error-free, the latest
+timestamp is within 15 minutes, and `vaultImplementationReviewed` is true. A current
+indexing failure or unreviewed implementation also blocks uncached daily
+reads. Check Vercel logs for the error class and the subgraph for details.
 
-All `subsquid.phala.network` squids are retired:
+Repair indexing or review the new implementation before moving a tag. The API
+does not use RPC or stale fallback data. Invalid or unavailable dates return
+400/404 and are not cached. Promote a previous API deployment only after
+checking that its upstream services still exist; versions dependent on
+retired squids, RPC or deleted subgraphs cannot restore service.
 
-- Circulation (Ethereum, Base, Phala, Khala) and Sygma: 2026-09-24.
-- Computation, spore-vault, and phat-contract: 2026-10-23.
+### Analytics gaps or cache rebuild
 
-The hostname is now served by the Cloudflare Worker `subsquid-retired` from
-[`scripts-toolbox/workers/subsquid-retired`](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/subsquid-retired),
-returning `410 Gone` with the same bodies previously served by Caddy. It does
-not depend on the OVH host.
+Inspect the Worker's refresh errors, upstream availability and last successful
+cache checkpoints. Failed requests must not advance a checkpoint. Resume the
+refresh after repairing the upstream. Chain-derived rows can be rebuilt from
+the Ethereum subgraph; a changed `_meta.deployment` triggers their reload.
 
-Archives are in the Dune legacy tables, the
+Cloud history is not fully recoverable from its upstream API. Preserve
+`cloud_daily`, restore it from the latest R2 export when necessary, and verify
+the restored row count and latest observation before refreshing. Archived
+Phala/Khala circulation and historical Cloud rows come from the preserved
+exports, not a fresh chain scan. Follow the Worker README for exact commands.
+
+## Phala L2 voting power
+
+[`l2-indexer`](https://github.com/Phala-Network/l2-indexer) runs in a Phala Cloud
+prod7 CVM at
+`https://daa34fe16ce7c191bf9e340066866ed2d23e95f6-3000.dstack-pha-prod7.phala.network`.
+Snapshot space `phala-network.eth` uses its `api` strategy for the Phala L2 vPHA
+token (`0xFdCE…c856`). Goldsky does not support Phala L2, so this remains a
+separate service. It is outside the circulation formula and the Ethereum
+subgraph. There is no monitoring configured for it.
+
+## Archives and retired services
+
+Dune exports and retired host backups are preserved in the private S3 archive
+managed by the Phala operations team. Legacy circulation dumps are also in the
 [`legacy-squid-archive-2026-09-23`](https://github.com/Phala-Network/pha-circulation-server/releases/tag/legacy-squid-archive-2026-09-23)
-release (circulation dumps restore-tested), and a private S3 archive maintained
-by the Phala ops team (computation squid dumps and other retired OVH data,
-2026-10-23).
+release and were restore-tested. The Dune dashboard is an archive, not the live
+analytics data source; the old Grafana service is retired.
 
-## Grafana
-
-Grafana (`analytics.phala.network`) was retired on 2026-09-24: every path now
-redirects to the Dune dashboard through a Cloudflare Redirect Rule.
-
-## Sygma explorer indexer
-
-Its only consumers were the Grafana dashboards, and `/sygma-explorer` had no
-traffic, so it was retired on 2026-09-24 with Grafana: the route returns `410`,
-now served by `subsquid-retired`.
-
+All `subsquid.phala.network` squids, including circulation, Sygma, computation,
+spore-vault and phat-contract, are retired. The Cloudflare Worker
+[`subsquid-retired`](https://github.com/Phala-Network/scripts-toolbox/tree/main/workers/subsquid-retired)
+returns `410 Gone`; restoring an old consumer does not restore these services.
