@@ -3,8 +3,8 @@
 ## Data flow
 
 ```text
-Ethereum ──> Goldsky phala-ethereum/prod ─┬─> this API (Vercel)
-Base ──────> Goldsky phala-base/prod ─────┘       ├─> /api/circulation ─> supply trackers
+Ethereum ──> Goldsky phala-ethereum/prod ──> this API (Vercel)
+                                               ├─> /api/circulation ─> supply trackers
                                                ├─> /api/all ─> current analytics
                                                └─> /api/snapshot ─> daily API consumers
 
@@ -17,13 +17,24 @@ CoinGecko PHA price ───────────────────┘
 apps claim page ──> phala-ethereum/prod (Khala and Phala claim logs)
 ```
 
-Subgraphs own chain-derived state, midnight snapshots, Vault accrual and
-claim events. The circulation API formats their integer wei amounts as decimal
-PHA strings; it does not call RPC or reconstruct historical blocks. The
+The Ethereum subgraph owns chain-derived state, midnight snapshots, Vault
+accrual and claim events. The circulation API formats its integer wei amounts
+as decimal PHA strings; it does not call RPC or reconstruct historical blocks. The
 `phala-analytics` Cloudflare Worker refreshes a SQLite cache and serves the
 dashboard and JSON APIs. Archived Phala/Khala circulation stays frozen.
 Cloud observations include values that cannot be reconstructed later;
 weekly `cloud_daily` exports to R2 preserve those observations.
+
+Circulation includes the Portal escrow backing bridged PHA on Base as
+circulating on Ethereum. The `portalBridge` component remains available, but
+the subgraph no longer subtracts it. `/api/circulation` and `totalCirculation`
+use Ethereum `circulation` alone, with the existing 12-decimal plain-number
+format. Relative to the former Ethereum-plus-Base total, this adds Portal
+escrow minus bridged supply (approximately 50,000 PHA when the definition
+changed). Historical snapshots use the same definition. Both JSON endpoints
+retain `base: null`; `/api/all` retains `sources.base: null`. There is no
+separate bridged-chain indexer or API request. Verify the subgraph uses this
+formula before deploying the API.
 
 The circulation API runs on Node.js 24.x, pinned by `engines.node` in
 `package.json`. Vercel uses that pin; CI reads the same value before running
@@ -53,15 +64,15 @@ Code and component-specific commands:
 ## Goldsky free allowance
 
 Stay within the Scale free allowance: **2,250 worker-hours/month** and about
-**100,000 stored entities**, team-wide. Two always-on subgraphs leave room for
-one temporary upgrade version. Goldsky enforces a hard cap of **three deployed
-subgraphs, including paused versions**. Pausing frees worker time, not a deploy
+**100,000 stored entities**, team-wide. The Ethereum subgraph is the only
+always-on indexer in this analytics stack; leave room for a temporary upgrade
+version. Goldsky enforces a hard cap of **three deployed subgraphs, including
+paused versions**. Pausing frees worker time, not a deploy
 slot or storage. Starter's one-time credit is not an ongoing free allowance.
 
 Count every deployed name/version before a deploy and check stored entities
-after sync. Upgrade one chain at a time and delete the superseded version after
-verification. Do not deploy two replacement versions simultaneously. Paused
-subgraphs still serve stale data and can eventually be deleted by Goldsky;
+after sync. Deploy one replacement at a time and delete the superseded
+version after verification. Paused subgraphs still serve stale data and can eventually be deleted by Goldsky;
 they are not durable archives. Export any irreplaceable comparison data before
 deleting a version. These limits also apply during rollback.
 
@@ -81,15 +92,16 @@ deleting a version. These limits also apply during rollback.
    errors, `Latest.timestamp` within 15 minutes, reviewed Vault implementation.
    Compare amounts, Vault checkpoints and complete claimer ID/field sets with
    preserved independent references using the subgraph parity verifier.
-4. Move that chain's `prod` tag to the verified version. Both the API and apps
+4. Move `phala-ethereum/prod` to the verified version. Both the API and apps
    use tag URLs; the Worker tracks `_meta.deployment` and reloads chain-derived
    cache rows after it changes.
 5. Promote a fresh circulation API deployment to change its runtime cache
    namespace. Existing daily CDN responses can take up to one day to expire.
    Verify plain-number output, `/api/all` totals and sampled daily values
-   against `ChainDay`; check the apps claim logs when Ethereum changed.
-6. Delete the superseded version after consumer verification, then upgrade
-   the other chain if needed. This keeps deployments at or below three.
+   against `ChainDay`, confirm both JSON endpoints have `base: null`, and
+   check the apps claim logs.
+6. Delete the superseded version after consumer verification. Keep total
+   deployed versions at or below three.
 
 Before deleting the old version, rollback can move `prod` back and promote a
 fresh API deployment. After deletion, recovery requires redeploying and
@@ -97,9 +109,9 @@ resyncing that version; deleting an indexer is not an instant rollback.
 
 ### API returns 503
 
-Read both configured subgraphs' `Latest` and `_meta` directly. Confirm the
-URLs use the expected `prod` tags, indexing is error-free, latest timestamps
-are within 15 minutes, and `vaultImplementationReviewed` is true. A current
+Read the configured Ethereum subgraph's `Latest` and `_meta` directly. Confirm
+the URL uses the expected `prod` tag, indexing is error-free, the latest
+timestamp is within 15 minutes, and `vaultImplementationReviewed` is true. A current
 indexing failure or unreviewed implementation also blocks uncached daily
 reads. Check Vercel logs for the error class and the subgraph for details.
 
@@ -114,7 +126,7 @@ retired squids, RPC or deleted subgraphs cannot restore service.
 Inspect the Worker's refresh errors, upstream availability and last successful
 cache checkpoints. Failed requests must not advance a checkpoint. Resume the
 refresh after repairing the upstream. Chain-derived rows can be rebuilt from
-the subgraphs; a changed `_meta.deployment` triggers their reload.
+the Ethereum subgraph; a changed `_meta.deployment` triggers their reload.
 
 Cloud history is not fully recoverable from its upstream API. Preserve
 `cloud_daily`, restore it from the latest R2 export when necessary, and verify
@@ -129,8 +141,8 @@ prod7 CVM at
 `https://daa34fe16ce7c191bf9e340066866ed2d23e95f6-3000.dstack-pha-prod7.phala.network`.
 Snapshot space `phala-network.eth` uses its `api` strategy for the Phala L2 vPHA
 token (`0xFdCE…c856`). Goldsky does not support Phala L2, so this remains a
-separate service. It is outside the circulation formula and the Ethereum/Base
-subgraphs. There is no monitoring configured for it.
+separate service. It is outside the circulation formula and the Ethereum
+subgraph. There is no monitoring configured for it.
 
 ## Archives and retired services
 

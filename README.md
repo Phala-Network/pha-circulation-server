@@ -1,21 +1,21 @@
 # pha-circulation-server
 
 PHA circulating supply API on Vercel (`phala/pha-circulation-server`, Node.js).
-Reads the `phala-ethereum` and `phala-base` Goldsky subgraphs; no RPC is used.
+Reads the `phala-ethereum` Goldsky subgraph; no RPC is used.
 
 ## API contract
 
 Production base URL: `https://pha-circulation-server.vercel.app`.
 All endpoints allow cross-origin requests (`Access-Control-Allow-Origin: *`).
 Amounts are PHA decimal **strings**, calculated with integer wei precision.
-`totalCirculation` adds Ethereum and Base and truncates to 12 decimal places,
+`totalCirculation` is Ethereum `circulation`, truncated to 12 decimal places
 without trailing zeros. Phala and Khala are zero after their parachain sunsets.
 
-| Request                             | Content type                      | Response                                                                                                                                                     |
-| ----------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/circulation`              | `text/plain; charset=UTF-8`       | Plain decimal total circulation, with no quotes, JSON wrapper, or newline. This is the supply-tracker endpoint.                                              |
-| `GET /api/all`                      | `application/json; charset=UTF-8` | `phala`, `khala`, `ethereum`, `base`, `totalCirculation`, `sources`. Current chain values come from each subgraph's `Latest(id: "current")`.                 |
-| `GET /api/snapshot?date=YYYY-MM-DD` | `application/json; charset=UTF-8` | `date`, `ethereum`, `base`, `totalCirculation`, from immutable `ChainDay(id: date)` rows. Dates start at `2020-04-30`; `base` is `null` before `2024-04-05`. |
+| Request                             | Content type                      | Response                                                                                                                                        |
+| ----------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/circulation`              | `text/plain; charset=UTF-8`       | Plain decimal total circulation, with no quotes, JSON wrapper, or newline. This is the supply-tracker endpoint.                                 |
+| `GET /api/all`                      | `application/json; charset=UTF-8` | `phala`, `khala`, `ethereum`, `base`, `totalCirculation`, `sources`. Current values come from `Latest(id: "current")`; `base` is always `null`. |
+| `GET /api/snapshot?date=YYYY-MM-DD` | `application/json; charset=UTF-8` | `date`, `ethereum`, `base`, `totalCirculation`, from immutable `ChainDay(id: date)` rows. Dates start at `2020-04-30`; `base` is always `null`. |
 
 `/api/all` chain objects retain these string fields:
 
@@ -23,24 +23,38 @@ without trailing zeros. Phala and Khala are zero after their parachain sunsets.
   `timestamp`, `totalIssuance`.
 - `ethereum`: `circulation`, `phalaChainBridge`, `khalaChainBridge`, `reward`,
   `sygmaBridge`, `portalBridge`, `timestamp`, `totalSupply`, `vaultReward`.
-- `base`: `circulation`, `totalSupply`, `timestamp`.
 
-Each snapshot chain includes `blockNumber`, `timestamp`, `circulation`,
-`totalSupply`; Ethereum also includes `reward`, `sunsetReward`,
-`phalaChainBridge`, `khalaChainBridge`, `sygmaBridge`, `portalBridge`,
+The snapshot `ethereum` object includes `blockNumber`, `timestamp`,
+`circulation`, `totalSupply`, `reward`, `sunsetReward`, `phalaChainBridge`, `khalaChainBridge`, `sygmaBridge`, `portalBridge`,
 `vaultReward`, `vaultUnstakeLocked`. All are strings. `date` is midnight in
 `YYYY-MM-DDT00:00:00.000000Z` form. Chain timestamps use the same six-digit
 fractional precision; the zeroed parachain timestamps use ISO milliseconds.
 The two Khala bridge balances are combined into `khalaChainBridge`.
+
+### Circulation definition
+
+Portal escrow backing PHA on Base counts as circulating **on Ethereum**.
+The subgraph no longer subtracts `portalBridge` from Ethereum circulation;
+`portalBridge` remains visible as a component. The API uses the subgraph's
+`circulation` directly and does not add a separate bridged-chain supply.
+Compared with the former Ethereum-plus-Base total, this adds the difference
+between Portal escrow and bridged supply, approximately **50,000 PHA** at the
+time of the definition change. Historical snapshots use this definition too.
+
+Both JSON endpoints retain `base` as `null`, and `/api/all` also retains
+`sources.base` as `null`. These replace the former objects; consumers must
+accept `null` while the Ethereum keys and types remain unchanged. The tracker
+endpoint keeps its plain-number byte format. Deploy with a subgraph version
+that includes Portal escrow in circulation.
 
 ### Snapshot convention and source metadata
 
 Daily values are evaluated at **exactly 00:00 UTC, before events at that
 instant**. The former RPC API used the first block at or after midnight,
 including deployment-day balances. This changes historical amounts slightly;
-the deployment-date snapshot now has zero supply. JSON keys and types stay the
-same. `blockNumber` and the chain `timestamp` identify the **last observed event
-or Clock poll at or before midnight**, rather than the final canonical block
+the deployment-date snapshot now has zero supply. Ethereum keys and types stay
+the same. `blockNumber` and the chain `timestamp` identify the **last observed
+event or Clock poll at or before midnight**, rather than the final canonical block
 before midnight. Both are zero (timestamp `1970-01-01T00:00:00.000000Z`) before
 the token's deployment. The top-level `date` always identifies the requested
 midnight, including on the deployment date.
@@ -52,9 +66,8 @@ time from `Latest.timestamp`, formatted like the chain timestamp;
 **replaces `headBlockNumber` and `lagBlocks`**. The subgraph's `_meta` is checked
 for indexing errors and for an indexed block at least as high as the observed
 block. `_meta.block.timestamp` is nullable and is not used.
-`sources.base` retains string fields `blockNumber` and `blockTag`; `blockTag`
-is now `indexed`. Both source block numbers identify the last observed event
-or poll used for the current values; they do not claim RPC finality.
+The source block number identifies the last observed event or poll used for
+the current values; it does not claim RPC finality.
 
 ### Errors
 
@@ -83,8 +96,7 @@ Vercel consumes CDN directives, so public responses expose `max-age` without
 `s-maxage`. The runtime cache uses deployment-scoped fixed keys (`latest`,
 `snapshot:<date>`). Query strings do not bypass that cache; concurrent misses
 share one computation. Upstream safety checks run on cache misses and failures
-are never cached. A cache miss needs at most one GraphQL request per chain;
-snapshots before Base deployment need only Ethereum.
+are never cached. Each cache miss needs one GraphQL request to Ethereum.
 
 Promote a new API deployment after moving a subgraph tag so cached historical
 rows from the previous version do not survive for the runtime cache's 30 days.
@@ -94,12 +106,11 @@ historical responses as refreshed.
 ## Configuration
 
 Copy `.env.example` to `.env.local` for local development. Configure the same
-variables in Vercel; use the subgraphs' `/prod/gn` tag endpoints in production.
+variables in Vercel; use the subgraph's `/prod/gn` tag endpoint in production.
 
 | Variable               | Required | Meaning                                                |
 | ---------------------- | -------- | ------------------------------------------------------ |
 | `GOLDSKY_ETHEREUM_URL` | yes      | Public `phala-ethereum/prod/gn` GraphQL URL.           |
-| `GOLDSKY_BASE_URL`     | yes      | Public `phala-base/prod/gn` GraphQL URL.               |
 | `UPSTREAM_TIMEOUT_MS`  | no       | Per-request timeout; positive integer, default `8000`. |
 
 ## Development
@@ -117,8 +128,9 @@ bun run start
 ```
 
 Tests use mocked GraphQL and production response fixtures recorded in
-`src/fixtures/production.json`. They verify endpoint keys/types, exact
-plain-number formatting, errors, CORS, caching, and the midnight convention.
+`src/fixtures/production.json`. They verify endpoint keys/types (with the
+documented null fields), Portal accounting, plain-number formatting, errors, CORS, caching, and the midnight
+convention.
 
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the stack's consumers, data
 flow, upgrade and recovery runbooks, free allowance, and archives.

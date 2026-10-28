@@ -1,12 +1,10 @@
 import {formatTotalCirculation} from './calc.js'
-import {formatBase, formatEthereum, formatTimestamp} from './circulation.js'
+import {formatEthereum, formatTimestamp} from './circulation.js'
 import type {Config} from './config.js'
-import {utcMidnight} from './date.js'
 import {readSubgraph} from './subgraph.js'
 
-// First snapshot dates of the legacy squids: the days the tokens were deployed.
+// First supported snapshot date: the Ethereum token deployment day.
 export const FIRST_ETHEREUM_SNAPSHOT_DATE = '2020-04-30'
-export const FIRST_BASE_SNAPSHOT_DATE = '2024-04-05'
 
 // The requested date cannot be served: malformed (400) or outside the
 // available range (404).
@@ -40,17 +38,11 @@ export const parseSnapshotDate = (value: string, now = new Date()): bigint => {
 }
 
 // Values are evaluated at exactly midnight; block metadata is last observed
-// at or before that boundary. Base is null before its token deployment date.
+// at or before that boundary. Circulation is supplied by the Ethereum subgraph.
 export const getSnapshot = async (config: Config, target: bigint) => {
   const date = new Date(Number(target) * 1000).toISOString().slice(0, 10)
-  const hasBase = target >= utcMidnight(FIRST_BASE_SNAPSHOT_DATE)
-  const [ethereumSource, baseSource] = await Promise.all([
-    readSubgraph(config, 'ethereum', date),
-    hasBase ? readSubgraph(config, 'base', date) : null,
-  ])
-  const ethereum = ethereumSource.state
-  const base = baseSource?.state
-  if (!ethereum || (hasBase && !base)) {
+  const {state: ethereum} = await readSubgraph(config, date)
+  if (!ethereum) {
     throw new SnapshotDateError('date is not indexed yet', 404)
   }
   return {
@@ -60,16 +52,7 @@ export const getSnapshot = async (config: Config, target: bigint) => {
       timestamp: formatTimestamp(ethereum.observedBlockTimestamp),
       ...formatEthereum(ethereum),
     },
-    base: base
-      ? {
-          blockNumber: base.observedBlockNumber.toString(),
-          timestamp: formatTimestamp(base.observedBlockTimestamp),
-          ...formatBase(base),
-        }
-      : null,
-    totalCirculation: formatTotalCirculation(
-      ethereum.circulation,
-      base?.circulation ?? 0n,
-    ),
+    base: null,
+    totalCirculation: formatTotalCirculation(ethereum.circulation),
   }
 }

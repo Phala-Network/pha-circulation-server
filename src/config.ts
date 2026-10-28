@@ -1,6 +1,5 @@
 export interface Config {
   ethereumUrl: string
-  baseUrl: string
   timeoutMs: number
 }
 
@@ -24,7 +23,6 @@ export const readConfig = (env: Record<string, string | undefined>): Config => {
   }
   return {
     ethereumUrl: required('GOLDSKY_ETHEREUM_URL'),
-    baseUrl: required('GOLDSKY_BASE_URL'),
     timeoutMs: positiveInt('UPSTREAM_TIMEOUT_MS', 8000),
   }
 }

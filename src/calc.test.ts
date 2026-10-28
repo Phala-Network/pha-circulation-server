@@ -11,12 +11,8 @@ describe('formatting', () => {
   })
 
   test('truncates totalCirculation to 12 decimals', () => {
-    // Legacy: 839403369.506551582261489765 + 1092890.98626759
-    expect(
-      formatTotalCirculation(
-        839_403_369_506551582261489765n,
-        1_092_890_986267590000000000n,
-      ),
-    ).toBe('840496260.492819172261')
+    expect(formatTotalCirculation(839_403_369_506551582261489765n)).toBe(
+      '839403369.506551582261',
+    )
   })
 })

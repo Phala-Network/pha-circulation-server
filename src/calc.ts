@@ -16,12 +16,12 @@ export const formatAmount = (value: bigint, decimals = DECIMALS): string => {
   return `${negative ? '-' : ''}${integer}${fraction ? `.${fraction}` : ''}`
 }
 
-// Previous behavior: Decimal(ethereum).plus(base).toDP(12, ROUND_DOWN).
+// Preserve the plain-number API precision: 12 decimals, rounded down.
 export const TOTAL_CIRCULATION_DECIMALS = 12
 
-export const formatTotalCirculation = (ethereum: bigint, base: bigint) => {
+export const formatTotalCirculation = (circulation: bigint) => {
   const step = 10n ** BigInt(DECIMALS - TOTAL_CIRCULATION_DECIMALS)
   // bigint division truncates toward zero, matching ROUND_DOWN.
-  const truncated = ((ethereum + base) / step) * step
+  const truncated = (circulation / step) * step
   return formatAmount(truncated)
 }

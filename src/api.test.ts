@@ -12,7 +12,7 @@ import {readFileSync} from 'node:fs'
 import {getCache, getEnv} from '@vercel/functions'
 import app from '../api/index.js'
 import {readConfig} from './config.js'
-import {type Chain, readSubgraph} from './subgraph.js'
+import {readSubgraph} from './subgraph.js'
 
 interface RecordedResponse {
   path: string
@@ -36,18 +36,17 @@ const recorded = (path: string) => {
 }
 const current: {
   ethereum: Record<string, string>
-  base: Record<string, string>
   sources: {ethereum: {vaultUnstakeLocked: string}}
 } = JSON.parse(recorded('/api/all').body)
 const config = {
   ethereumUrl: 'https://ethereum.test/gn',
-  baseUrl: 'https://base.test/gn',
   timeoutMs: 50,
 }
 const cache = getCache({namespace: getEnv().VERCEL_DEPLOYMENT_ID ?? 'local'})
 const fetchSpy = spyOn(globalThis, 'fetch')
 const logSpy = spyOn(console, 'error')
-const {GOLDSKY_ETHEREUM_URL, GOLDSKY_BASE_URL} = process.env
+const ethereumEnvKey = 'GOLDSKY_ETHEREUM_URL'
+const originalEthereumUrl = process.env[ethereumEnvKey]
 const latestCacheControl =
   'public, max-age=60, s-maxage=60, stale-while-revalidate=60'
 const snapshotCacheControl = 'public, max-age=3600, s-maxage=86400'
@@ -73,19 +72,19 @@ interface MockState extends Record<string, unknown> {
   vaultReward: unknown
 }
 
-const stateFor = (chain: Chain, date?: string): MockState => {
-  let amounts = current[chain]
+const stateFor = (date?: string): MockState => {
+  let amounts = current.ethereum
   if (date) {
-    const snapshot: Record<string, Record<string, string>> = JSON.parse(
+    const snapshot: {ethereum: Record<string, string>} = JSON.parse(
       recorded(`/api/snapshot?date=${date}`).body,
     )
-    amounts = snapshot[chain] ?? {}
+    amounts = snapshot.ethereum
   }
   const timestamp = date
     ? Date.parse(`${date}T00:00:00Z`) / 1000
     : Math.floor(Date.now() / 1000) - 10
   const state: MockState = {
-    chain,
+    chain: 'ethereum',
     timestamp: String(timestamp),
     observedBlockNumber: '100',
     observedBlockTimestamp: String(timestamp - (date ? 200 : 0)),
@@ -105,6 +104,11 @@ const stateFor = (chain: Chain, date?: string): MockState => {
   for (const [key, value] of Object.entries(amounts)) {
     if (key !== 'timestamp' && key !== 'blockNumber') state[key] = toWei(value)
   }
+  // The new subgraph includes the Portal escrow in Ethereum circulation.
+  const {circulation = '0', portalBridge = '0'} = amounts
+  state.circulation = (
+    BigInt(toWei(circulation)) + BigInt(toWei(portalBridge))
+  ).toString()
   if (date === '2020-04-30') {
     state.totalSupply = '0'
     state.circulation = '0'
@@ -119,22 +123,23 @@ interface GraphData {
   chainDay?: MockState | null
   _meta: {hasIndexingErrors: boolean; block: {number: number}}
 }
-const requests: {chain: Chain; date?: string; query: string}[] = []
-const respond = (mutate?: (data: GraphData, chain: Chain) => void) => {
+const requests: {url: string; date?: string; query: string}[] = []
+const respond = (mutate?: (data: GraphData) => void) => {
   fetchSpy.mockImplementation(async (input, init) => {
-    const chain = String(input) === config.ethereumUrl ? 'ethereum' : 'base'
+    const url = String(input)
+    if (url !== config.ethereumUrl) throw new Error('Unexpected upstream URL')
     if (typeof init?.body !== 'string') throw new Error('Expected GraphQL body')
     const payload: {query: string; variables?: {date: string}} = JSON.parse(
       init.body,
     )
     const date = payload.variables?.date
-    requests.push({chain, date, query: payload.query})
+    requests.push({url, date, query: payload.query})
     const data: GraphData = {
-      latest: stateFor(chain),
-      ...(date ? {chainDay: stateFor(chain, date)} : {}),
+      latest: stateFor(),
+      ...(date ? {chainDay: stateFor(date)} : {}),
       _meta: {hasIndexingErrors: false, block: {number: 200}},
     }
-    mutate?.(data, chain)
+    mutate?.(data)
     return Response.json({data})
   })
 }
@@ -143,7 +148,6 @@ beforeEach(async () => {
   setSystemTime(new Date(production.recordedAt))
   Object.assign(process.env, {
     GOLDSKY_ETHEREUM_URL: config.ethereumUrl,
-    GOLDSKY_BASE_URL: config.baseUrl,
   })
   await Promise.all([
     cache.delete('latest'),
@@ -159,15 +163,8 @@ beforeEach(async () => {
 afterEach(() => {
   setSystemTime()
   fetchSpy.mockReset()
-  for (const [key, value] of [
-    ['GOLDSKY_ETHEREUM_URL', GOLDSKY_ETHEREUM_URL],
-    ['GOLDSKY_BASE_URL', GOLDSKY_BASE_URL],
-  ]) {
-    if (key) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-  }
+  if (originalEthereumUrl === undefined) delete process.env[ethereumEnvKey]
+  else process.env[ethereumEnvKey] = originalEthereumUrl
 })
 afterAll(() => {
   fetchSpy.mockRestore()
@@ -191,21 +188,18 @@ const checkHeaders = (response: Response, reference: RecordedResponse) => {
 }
 
 describe('recorded production contracts', () => {
-  test('supply tracker gets identical plain-number bytes; latest requests share the cache', async () => {
+  test('supply tracker keeps plain-number formatting and includes Portal escrow; latest requests share the cache', async () => {
     const reference = recorded('/api/circulation')
     const response = await app.request(reference.path)
     checkHeaders(response, reference)
     expect(response.headers.get('cache-control')).toBe(latestCacheControl)
-    expect(await response.text()).toBe(reference.body)
+    expect(await response.text()).toBe('858569518.416145188511')
     await app.request('/api/all?cache-bust=ignored')
-    expect(requests).toHaveLength(2)
-    expect(requests.map((row) => row.chain).sort()).toEqual([
-      'base',
-      'ethereum',
-    ])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe(config.ethereumUrl)
   })
 
-  test('all key sets and types match, with only the approved source metadata replacement', async () => {
+  test('all keys/types match apart from null Base and the approved source metadata replacement', async () => {
     const response = await app.request('/api/all')
     checkHeaders(response, recorded('/api/all'))
     expect(response.headers.get('cache-control')).toBe(latestCacheControl)
@@ -213,13 +207,18 @@ describe('recorded production contracts', () => {
     const expected = JSON.parse(recorded('/api/all').body)
     expect(actual.sources.ethereum.indexedAt).toBe(actual.ethereum.timestamp)
     expect(actual.sources.ethereum.lagSeconds).toBe('10')
-    expect(actual.sources.base.blockTag).toBe('indexed')
+    expect(actual.base).toBeNull()
+    expect(actual.sources.base).toBeNull()
+    expected.base = null
+    expected.sources.base = null
     delete actual.sources.ethereum.indexedAt
     delete actual.sources.ethereum.lagSeconds
     delete expected.sources.ethereum.headBlockNumber
     delete expected.sources.ethereum.lagBlocks
     expect(shape(actual)).toEqual(shape(expected))
-    expect(actual.totalCirculation).toBe(expected.totalCirculation)
+    expect(actual.ethereum.circulation).toBe('858569518.416145188511489765')
+    expect(actual.totalCirculation).toBe('858569518.416145188511')
+    expect(actual.ethereum.portalBridge).toBe(expected.ethereum.portalBridge)
     expect(actual.phala.circulation).toBe('0')
     expect(actual.khala.circulation).toBe('0')
   })
@@ -232,6 +231,7 @@ describe('recorded production contracts', () => {
       expect(response.headers.get('cache-control')).toBe(snapshotCacheControl)
       const actual = await response.json()
       const expected = JSON.parse(recorded(path).body)
+      expected.base = null
       expect(shape(actual)).toEqual(shape(expected))
       const date = path.split('=')[1]
       expect(actual.date).toBe(`${date}T00:00:00.000000Z`)
@@ -240,14 +240,29 @@ describe('recorded production contracts', () => {
         expect(actual.ethereum.blockNumber).toBe('0')
         expect(actual.ethereum.timestamp).toBe('1970-01-01T00:00:00.000000Z')
       } else {
-        expect(actual.ethereum.circulation).toBe(expected.ethereum.circulation)
+        expect(toWei(actual.ethereum.circulation)).toBe(
+          (
+            BigInt(toWei(expected.ethereum.circulation)) +
+            BigInt(toWei(expected.ethereum.portalBridge))
+          ).toString(),
+        )
+        expect(actual.ethereum.portalBridge).toBe(
+          expected.ethereum.portalBridge,
+        )
         expect(actual.ethereum.timestamp < actual.date).toBe(true)
       }
-      expect(actual.base === null).toBe(date < '2024-04-05')
-      expect(requests).toHaveLength(actual.base === null ? 1 : 2)
+      expect(actual.totalCirculation).toBe(
+        date === '2026-10-26'
+          ? '858488273.448493821323'
+          : date === '2020-04-30'
+            ? '0'
+            : expected.totalCirculation,
+      )
+      expect(actual.base).toBeNull()
+      expect(requests).toHaveLength(1)
       expect(requests.every((row) => row.date === date)).toBe(true)
       await app.request(`${path}&cache-bust=ignored`)
-      expect(requests).toHaveLength(actual.base === null ? 1 : 2)
+      expect(requests).toHaveLength(1)
     },
   )
 
@@ -302,36 +317,32 @@ const unhealthy: [string, (data: GraphData) => void][] = [
     },
   ],
 ]
-for (const chain of ['ethereum', 'base'] as const) {
-  describe(`${chain} failures`, () => {
-    for (const [label, mutate] of unhealthy) {
-      test.each(endpoints)(
-        `${label}: %s returns uncached 503 and can recover`,
-        async (path) => {
-          respond((data, source) => {
-            if (chain === source) mutate(data)
-          })
-          const response = await app.request(path)
-          expect(response.status).toBe(503)
-          expect(response.headers.get('cache-control')).toBe('no-store')
-          expect(response.headers.get('access-control-allow-origin')).toBe('*')
-          expect(response.headers.get('content-type')).toBe(
-            recorded(path).contentType,
-          )
-          expect(await response.text()).toBe(
-            path === '/api/circulation'
-              ? 'Service Unavailable'
-              : path === '/api/all'
-                ? '{"error":"circulation_unavailable"}'
-                : '{"error":"snapshot_unavailable"}',
-          )
-          respond()
-          expect((await app.request(path)).status).toBe(200)
-        },
-      )
-    }
-  })
-}
+describe('subgraph failures', () => {
+  for (const [label, mutate] of unhealthy) {
+    test.each(endpoints)(
+      `${label}: %s returns uncached 503 and can recover`,
+      async (path) => {
+        respond(mutate)
+        const response = await app.request(path)
+        expect(response.status).toBe(503)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(response.headers.get('access-control-allow-origin')).toBe('*')
+        expect(response.headers.get('content-type')).toBe(
+          recorded(path).contentType,
+        )
+        expect(await response.text()).toBe(
+          path === '/api/circulation'
+            ? 'Service Unavailable'
+            : path === '/api/all'
+              ? '{"error":"circulation_unavailable"}'
+              : '{"error":"snapshot_unavailable"}',
+        )
+        respond()
+        expect((await app.request(path)).status).toBe(200)
+      },
+    )
+  }
+})
 
 test('accepts exactly 15 minutes old and reports age in seconds', async () => {
   respond((data) => {
@@ -340,7 +351,7 @@ test('accepts exactly 15 minutes old and reports age in seconds', async () => {
       data.latest.observedBlockTimestamp = data.latest.timestamp
     }
   })
-  const result = await readSubgraph(config, 'ethereum')
+  const result = await readSubgraph(config)
   expect(result.lagSeconds).toBe(900n)
 })
 
@@ -363,8 +374,8 @@ test('daily implementation flag, missing row, and mismatched date are handled sa
 })
 
 test('merges the two Khala bridges and preserves signed Vault rewards', async () => {
-  respond((data, chain) => {
-    if (chain === 'ethereum' && data.latest) {
+  respond((data) => {
+    if (data.latest) {
       data.latest.khalaLegacyChainBridge = toWei('2')
       data.latest.khalaChainBridge = toWei('3')
       data.latest.vaultReward = toWei('-1.5')
@@ -378,7 +389,7 @@ test('merges the two Khala bridges and preserves signed Vault rewards', async ()
 
 test.each([
   ['negative balance', 'reward', '-1'],
-  ['wrong chain', 'chain', 'base'],
+  ['wrong chain', 'chain', 'unexpected'],
   ['malformed amount', 'circulation', '123.5'],
   ['missing amount', 'totalSupply', undefined],
   ['unindexed observed block', 'observedBlockNumber', '201'],
@@ -417,21 +428,16 @@ for (const path of endpoints) {
   })
 }
 
-test('configuration only requires the two subgraphs and validates the request timeout', () => {
+test('configuration only requires the Ethereum subgraph and validates the request timeout', () => {
   expect(
     readConfig({
       GOLDSKY_ETHEREUM_URL: config.ethereumUrl,
-      GOLDSKY_BASE_URL: config.baseUrl,
     }),
   ).toEqual({...config, timeoutMs: 8000})
   expect(() => readConfig({})).toThrow('GOLDSKY_ETHEREUM_URL')
-  expect(() => readConfig({GOLDSKY_ETHEREUM_URL: config.ethereumUrl})).toThrow(
-    'GOLDSKY_BASE_URL',
-  )
   expect(() =>
     readConfig({
       GOLDSKY_ETHEREUM_URL: config.ethereumUrl,
-      GOLDSKY_BASE_URL: config.baseUrl,
       UPSTREAM_TIMEOUT_MS: '0',
     }),
   ).toThrow('positive integer')

@@ -1,8 +1,6 @@
 import type {Config} from './config.js'
 import {utcMidnight} from './date.js'
 
-export type Chain = 'ethereum' | 'base'
-
 const AMOUNT_FIELDS = [
   'totalSupply',
   'reward',
@@ -59,21 +57,17 @@ const uint = (value: unknown): bigint => {
   return parsed
 }
 
-const reviewed = (value: unknown, chain: Chain) => {
+const reviewed = (value: unknown) => {
   if (
-    field(value, 'chain') !== chain ||
+    field(value, 'chain') !== 'ethereum' ||
     field(value, 'vaultImplementationReviewed') !== true
   ) {
     throw new SubgraphError('Wrong chain or unreviewed Vault implementation')
   }
 }
 
-const parseState = (
-  value: unknown,
-  chain: Chain,
-  indexedBlock: bigint,
-): ChainState => {
-  reviewed(value, chain)
+const parseState = (value: unknown, indexedBlock: bigint): ChainState => {
+  reviewed(value)
   const amounts = Object.fromEntries(
     AMOUNT_FIELDS.map((key) => [
       key,
@@ -98,13 +92,9 @@ const parseState = (
   return result
 }
 
-// One query per chain. Daily reads also check current indexer freshness and
-// implementation safety, without Graph time-travel queries or RPC calls.
-export const readSubgraph = async (
-  config: Config,
-  chain: Chain,
-  date?: string,
-) => {
+// One query to Ethereum. Daily reads also check current indexer freshness
+// and implementation safety, without Graph time-travel queries or RPC calls.
+export const readSubgraph = async (config: Config, date?: string) => {
   const query = date
     ? `query Snapshot($date: ID!) {
         latest(id: "current") { chain timestamp vaultImplementationReviewed }
@@ -117,15 +107,12 @@ export const readSubgraph = async (
       }`
   let body: unknown
   try {
-    const response = await fetch(
-      chain === 'ethereum' ? config.ethereumUrl : config.baseUrl,
-      {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({query, variables: date ? {date} : undefined}),
-        signal: AbortSignal.timeout(config.timeoutMs),
-      },
-    )
+    const response = await fetch(config.ethereumUrl, {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({query, variables: date ? {date} : undefined}),
+      signal: AbortSignal.timeout(config.timeoutMs),
+    })
     if (!response.ok)
       throw new SubgraphError(`Subgraph HTTP ${response.status}`)
     body = await response.json()
@@ -142,13 +129,12 @@ export const readSubgraph = async (
   }
   const indexedBlock = uint(field(data, '_meta', 'block', 'number'))
   const latest = field(data, 'latest')
-  reviewed(latest, chain)
+  reviewed(latest)
   const indexedAt = uint(field(latest, 'timestamp'))
   const age = BigInt(Math.floor(Date.now() / 1000)) - indexedAt
   if (age > MAX_AGE_SECONDS) throw new SubgraphError('Subgraph Latest is stale')
   const rawState = date ? field(data, 'chainDay') : latest
-  const state =
-    rawState === null ? null : parseState(rawState, chain, indexedBlock)
+  const state = rawState === null ? null : parseState(rawState, indexedBlock)
   if (date && state && state.timestamp !== utcMidnight(date)) {
     throw new SubgraphError('Subgraph snapshot date differs')
   }

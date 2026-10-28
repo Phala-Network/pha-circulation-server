@@ -22,11 +22,6 @@ export const formatEthereum = (ethereum: ChainState) => ({
   vaultUnstakeLocked: formatAmount(ethereum.vaultUnstakeLocked),
 })
 
-export const formatBase = (base: ChainState) => ({
-  circulation: formatAmount(base.circulation),
-  totalSupply: formatAmount(base.totalSupply),
-})
-
 const zeroSubstrateChain = () => ({
   circulation: '0',
   crowdloan: '0',
@@ -36,17 +31,12 @@ const zeroSubstrateChain = () => ({
   totalIssuance: '0',
 })
 
-// Preserve the public response shape while reading both chains from Goldsky.
+// Portal escrow stays in Ethereum circulation; Base has no separate state.
 export const getAllData = async (config: Config) => {
-  const [ethSource, baseSource] = await Promise.all([
-    readSubgraph(config, 'ethereum'),
-    readSubgraph(config, 'base'),
-  ])
+  const ethSource = await readSubgraph(config)
   const ethereum = ethSource.state
-  const base = baseSource.state
-  if (!ethereum || !base) throw new SubgraphError('Missing Latest state')
+  if (!ethereum) throw new SubgraphError('Missing Latest state')
   const ethereumAmounts = formatEthereum(ethereum)
-  const baseAmounts = formatBase(base)
   return {
     phala: zeroSubstrateChain(),
     khala: zeroSubstrateChain(),
@@ -61,15 +51,8 @@ export const getAllData = async (config: Config) => {
       totalSupply: ethereumAmounts.totalSupply,
       vaultReward: ethereumAmounts.vaultReward,
     },
-    base: {
-      circulation: baseAmounts.circulation,
-      totalSupply: baseAmounts.totalSupply,
-      timestamp: formatTimestamp(base.timestamp),
-    },
-    totalCirculation: formatTotalCirculation(
-      ethereum.circulation,
-      base.circulation,
-    ),
+    base: null,
+    totalCirculation: formatTotalCirculation(ethereum.circulation),
     sources: {
       ethereum: {
         blockNumber: ethereum.observedBlockNumber.toString(),
@@ -77,10 +60,7 @@ export const getAllData = async (config: Config) => {
         lagSeconds: ethSource.lagSeconds.toString(),
         vaultUnstakeLocked: ethereumAmounts.vaultUnstakeLocked,
       },
-      base: {
-        blockNumber: base.observedBlockNumber.toString(),
-        blockTag: 'indexed',
-      },
+      base: null,
     },
   }
 }
